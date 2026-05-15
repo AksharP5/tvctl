@@ -1,4 +1,5 @@
 import dgram from "node:dgram"
+import { networkInterfaces } from "node:os"
 import { URL } from "node:url"
 import { RokuClient } from "./client"
 import type { RokuDevice } from "../types"
@@ -7,7 +8,8 @@ const ssdpAddress = "239.255.255.250"
 const ssdpPort = 1900
 
 export async function discoverRokus(timeoutMs = 2500): Promise<RokuDevice[]> {
-  const locations = await discoverLocations(timeoutMs)
+  const result = await discoverRokuLocations(timeoutMs)
+  const locations = result.locations
   const devices: Array<RokuDevice | undefined> = await Promise.all(
     [...locations].map(async (location) => {
       try {
@@ -28,10 +30,16 @@ export async function discoverRokus(timeoutMs = 2500): Promise<RokuDevice[]> {
   })
 }
 
-async function discoverLocations(timeoutMs: number): Promise<Set<string>> {
+export interface RokuDiscoveryResult {
+  locations: Set<string>
+  responses: string[]
+}
+
+export async function discoverRokuLocations(timeoutMs = 2500): Promise<RokuDiscoveryResult> {
   return new Promise((resolve, reject) => {
     const socket = dgram.createSocket("udp4")
     const locations = new Set<string>()
+    const responses: string[] = []
     const message = [
       "M-SEARCH * HTTP/1.1",
       `HOST: ${ssdpAddress}:${ssdpPort}`,
@@ -44,11 +52,12 @@ async function discoverLocations(timeoutMs: number): Promise<Set<string>> {
 
     const timer = setTimeout(() => {
       socket.close()
-      resolve(locations)
+      resolve({ locations, responses })
     }, timeoutMs)
 
     socket.on("message", (buffer) => {
       const response = buffer.toString("utf8")
+      responses.push(response)
       const location = findHeader(response, "location")
       if (location) locations.add(location)
     })
@@ -64,6 +73,22 @@ async function discoverLocations(timeoutMs: number): Promise<Set<string>> {
       socket.send(message, ssdpPort, ssdpAddress)
     })
   })
+}
+
+export function getPrivateIpv4Addresses(): string[] {
+  const addresses: string[] = []
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.family === "IPv4" && !entry.internal && isPrivateIpv4(entry.address)) {
+        addresses.push(entry.address)
+      }
+    }
+  }
+  return addresses
+}
+
+function isPrivateIpv4(address: string): boolean {
+  return address.startsWith("10.") || address.startsWith("192.168.") || /^172\.(1[6-9]|2\d|3[01])\./.test(address)
 }
 
 function findHeader(response: string, name: string): string | undefined {

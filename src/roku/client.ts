@@ -39,16 +39,27 @@ export class RokuClient {
     return parseDeviceInfo(xml, this.host)
   }
 
-  private async getText(path: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl}${path}`)
+  async ping(timeoutMs = 1500): Promise<boolean> {
+    try {
+      await this.getText("/query/device-info", timeoutMs)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private async getText(path: string, timeoutMs = 5000): Promise<string> {
+    const signal = AbortSignal.timeout(timeoutMs)
+    const response = await fetch(`${this.baseUrl}${path}`, { signal })
     if (!response.ok) {
       throw new Error(`Roku request failed: GET ${path} ${response.status}`)
     }
     return response.text()
   }
 
-  private async post(path: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}${path}`, { method: "POST" })
+  private async post(path: string, timeoutMs = 5000): Promise<void> {
+    const signal = AbortSignal.timeout(timeoutMs)
+    const response = await fetch(`${this.baseUrl}${path}`, { method: "POST", signal })
     if (!response.ok) {
       throw new Error(`Roku request failed: POST ${path} ${response.status}`)
     }

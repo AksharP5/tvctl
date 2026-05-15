@@ -2,6 +2,7 @@
 import { cac } from "cac"
 import { getConfigPath, setDefaultDevice } from "./config"
 import { formatDevice, resolveDevice } from "./device"
+import { runDoctor } from "./doctor"
 import { RokuClient } from "./roku/client"
 import { discoverRokus } from "./roku/discover"
 import { runRemote } from "./tui/remote"
@@ -42,6 +43,13 @@ cli.command("discover", "Find Roku devices on the local network").action(async (
   }
   console.log(`\nDefault device saved to ${getConfigPath()}`)
 })
+
+cli
+  .command("doctor", "Diagnose Roku discovery and network control")
+  .option("--host <host>", "Roku host or IP address to test directly")
+  .action(async (options: HostOptions) => {
+    await runDoctor(options.host)
+  })
 
 cli
   .command("key <key>", "Send a Roku keypress")
