@@ -1,0 +1,30 @@
+{
+  "name": "tvctl",
+  "version": "0.1.0",
+  "description": "A terminal remote and CLI for Roku TVs.",
+  "module": "src/cli.ts",
+  "type": "module",
+  "bin": {
+    "tvctl": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun src/cli.ts",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.2.10",
+    "cac": "^7.0.0",
+    "fast-xml-parser": "^5.8.0"
+  }
+}
