@@ -25,7 +25,6 @@ After discovery, `tvctl` saves the first Roku as your default device in `~/.conf
 tvctl                 # Open the OpenTUI remote
 tvctl remote          # Same as above
 tvctl discover        # Find Roku TVs on your local network
-tvctl doctor          # Diagnose discovery/network control
 tvctl apps            # List installed Roku apps
 tvctl launch youtube  # Launch an app by id or fuzzy name
 tvctl active          # Show the active app
@@ -69,12 +68,7 @@ If discovery does not find your Roku, check the TV setting:
 
 Set it to `Enabled`. Use `Permissive` only if your LAN uses non-private IP ranges or a more advanced network setup.
 
-Then run:
-
-```bash
-tvctl doctor
-tvctl doctor --host <roku-ip>
-```
+You can also pass `--host <ip>` directly if discovery is blocked by your network.
 
 ## Development
 
