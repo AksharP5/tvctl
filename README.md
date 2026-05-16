@@ -25,14 +25,7 @@ bunx tvctl
 npx tvctl
 ```
 
-Homebrew releases install the compiled binary:
-
-```bash
-brew tap AksharP5/tap
-brew install tvctl
-```
-
-The npm package currently requires Bun because the package bin runs TypeScript through Bun. `npx tvctl` will still require Bun to be installed on the user's machine. The Homebrew package does not require Bun.
+The npm package currently requires Bun because the package bin runs TypeScript through Bun. `npx tvctl` will still require Bun to be installed on the user's machine.
 
 ## Usage
 
@@ -171,6 +164,7 @@ bun src/cli.ts --help
 ## Publishing Checklist
 
 - Add an npm automation token as `NPM_TOKEN`, or configure npm trusted publishing for the GitHub Actions release workflow.
-- Add a GitHub PAT with access to `AksharP5/homebrew-tap` as `HOMEBREW_TAP_TOKEN`.
-- Create a tag such as `v0.1.0` and push it. The release workflow builds macOS/Linux binaries, publishes GitHub release artifacts, publishes npm, and updates the Homebrew tap formula.
+- Use conventional commits on `main`: `fix:` creates patch releases, `feat:` creates minor releases, and `feat!:` or `BREAKING CHANGE:` creates major releases.
+- Release Please opens or updates one release PR that bumps `package.json`, updates `CHANGELOG.md`, and groups releasable commits.
+- Merge the release PR when you want to publish the grouped updates. The workflow publishes npm, tags `vX.Y.Z`, and creates a GitHub release.
 - Keep Roku setup docs clear: users need both devices on the same local network and Roku mobile app control enabled under `Settings > System > Advanced system settings > Control by mobile apps > Network access`.

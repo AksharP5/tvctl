@@ -26,6 +26,9 @@
     "src",
     "README.md"
   ],
+  "directories": {
+    "bin": "bin"
+  },
   "publishConfig": {
     "access": "public"
   },

@@ -1,147 +1,44 @@
-name: Release
+name: Release Please
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
+  pull-requests: write
+  id-token: write
 
 jobs:
-  build:
-    name: build ${{ matrix.archive_target }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            bun_target: darwin-arm64
-            archive_target: darwin_arm64
-          - os: macos-13
-            bun_target: darwin-x64
-            archive_target: darwin_amd64
-          - os: ubuntu-latest
-            bun_target: linux-x64
-            archive_target: linux_amd64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-      - name: Build executable
-        run: |
-          bun build src/cli.ts --compile --target=bun-${{ matrix.bun_target }} --outfile dist/tvctl
-      - name: Archive executable
-        shell: bash
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          archive="tvctl_${version}_${{ matrix.archive_target }}.tar.gz"
-          tar -czf "$archive" -C dist tvctl
-          shasum -a 256 "$archive" > "$archive.sha256"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: tvctl-${{ matrix.archive_target }}
-          path: |
-            tvctl_*.tar.gz
-            tvctl_*.tar.gz.sha256
-
-  github-release:
-    needs: build
+  release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
-          path: artifacts
-      - name: Prepare release files
-        shell: bash
-        run: |
-          mkdir upload
-          find artifacts -name 'tvctl_*.tar.gz' -exec cp {} upload/ \;
-          find artifacts -name 'tvctl_*.tar.gz.sha256' -exec cat {} \; > upload/checksums.txt
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" upload/* --title "$GITHUB_REF_NAME" --generate-notes
+          config-file: release-please-config.json
+          manifest-file: release-please-manifest.json
 
-  npm:
-    needs: github-release
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
       - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+
       - uses: oven-sh/setup-bun@v2
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+
       - uses: actions/setup-node@v4
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
+
       - run: bun install --frozen-lockfile
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+
       - run: bun run typecheck
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+
       - run: npm publish --provenance --access public
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-  homebrew:
-    needs: github-release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - uses: actions/checkout@v4
-        with:
-          repository: AksharP5/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: homebrew-tap
-      - name: Update formula
-        shell: bash
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          checksums="$(find artifacts -name 'tvctl_*.tar.gz.sha256' -exec cat {} \;)"
-          darwin_arm64_sha="$(printf '%s\n' "$checksums" | awk '/darwin_arm64/ {print $1}')"
-          darwin_amd64_sha="$(printf '%s\n' "$checksums" | awk '/darwin_amd64/ {print $1}')"
-          linux_amd64_sha="$(printf '%s\n' "$checksums" | awk '/linux_amd64/ {print $1}')"
-          mkdir -p homebrew-tap/Formula
-          cat > homebrew-tap/Formula/tvctl.rb <<EOF
-          class Tvctl < Formula
-            desc "Terminal remote and CLI for Roku TVs"
-            homepage "https://github.com/AksharP5/tvctl"
-            version "${version}"
-            license "MIT"
-
-            on_macos do
-              if Hardware::CPU.arm?
-                url "https://github.com/AksharP5/tvctl/releases/download/v${version}/tvctl_${version}_darwin_arm64.tar.gz"
-                sha256 "${darwin_arm64_sha}"
-              else
-                url "https://github.com/AksharP5/tvctl/releases/download/v${version}/tvctl_${version}_darwin_amd64.tar.gz"
-                sha256 "${darwin_amd64_sha}"
-              end
-            end
-
-            on_linux do
-              url "https://github.com/AksharP5/tvctl/releases/download/v${version}/tvctl_${version}_linux_amd64.tar.gz"
-              sha256 "${linux_amd64_sha}"
-            end
-
-            def install
-              bin.install "tvctl"
-            end
-
-            test do
-              assert_match "tvctl/#{version}", shell_output("#{bin}/tvctl --version")
-            end
-          end
-          EOF
-      - name: Commit formula
-        working-directory: homebrew-tap
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/tvctl.rb
-          git commit -m "tvctl ${GITHUB_REF_NAME#v}"
-          git push
