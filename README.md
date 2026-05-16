@@ -25,7 +25,14 @@ bunx tvctl
 npx tvctl
 ```
 
-`tvctl` currently requires Bun because the package bin runs TypeScript through Bun. `npx tvctl` will still require Bun to be installed on the user's machine.
+Homebrew releases install the compiled binary:
+
+```bash
+brew tap AksharP5/tap
+brew install tvctl
+```
+
+The npm package currently requires Bun because the package bin runs TypeScript through Bun. `npx tvctl` will still require Bun to be installed on the user's machine. The Homebrew package does not require Bun.
 
 ## Usage
 
@@ -80,6 +87,8 @@ tvctl ask --model gpt-5.4 "open spotify and search future"
 
 You can also configure the planner from the main TUI. Run `tvctl`, press `c`, choose the provider, edit the model, and press `Enter` to save.
 
+The main TUI also has an agent prompt. Press `/`, type a request like `open prime` or `search youtube for drake album`, then press `Enter`.
+
 Provider support:
 
 - `opencode`: uses `opencode run -m <model>`.
@@ -112,6 +121,7 @@ tvctl apps --host 192.168.1.20
 
 - Arrow keys or `h`/`j`/`k`/`l`: move
 - `Enter` or `Space`: OK/select
+- `/`: ask tvctl to run a TV request
 - `m`: Home
 - `b`: Back
 - `s`: Search
@@ -160,7 +170,7 @@ bun src/cli.ts --help
 
 ## Publishing Checklist
 
-- Publish npm package: `npm publish`.
-- Create a tagged GitHub release with built source tarball.
-- Add a Homebrew tap formula that installs the npm package or downloads the release tarball and creates the `tvctl` executable.
+- Add an npm automation token as `NPM_TOKEN`, or configure npm trusted publishing for the GitHub Actions release workflow.
+- Add a GitHub PAT with access to `AksharP5/homebrew-tap` as `HOMEBREW_TAP_TOKEN`.
+- Create a tag such as `v0.1.0` and push it. The release workflow builds macOS/Linux binaries, publishes GitHub release artifacts, publishes npm, and updates the Homebrew tap formula.
 - Keep Roku setup docs clear: users need both devices on the same local network and Roku mobile app control enabled under `Settings > System > Advanced system settings > Control by mobile apps > Network access`.

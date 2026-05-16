@@ -7,6 +7,7 @@ import { RokuClient } from "./roku/client"
 import type { RokuApp, RokuKey, TvctlAiConfig } from "./types"
 
 const execFileAsync = promisify(execFile)
+const aiTimeoutMs = Number(process.env.TVCTL_AI_TIMEOUT_MS ?? 180_000)
 export const defaultAiConfig = {
   provider: "opencode",
   model: "opencode/big-pickle",
@@ -43,8 +44,10 @@ export async function planWithAi(request: string, apps: RokuApp[], config?: Tvct
 export async function planWithOpenCode(request: string, apps: RokuApp[], model: string): Promise<TvPlan> {
   const prompt = buildPrompt(request, apps)
   const { stdout } = await execFileAsync("opencode", ["run", "-m", model, prompt], {
-    timeout: 90_000,
+    timeout: aiTimeoutMs,
     maxBuffer: 1024 * 1024,
+  }).catch((error) => {
+    throw providerError("OpenCode", error)
   })
   return parsePlan(stdout)
 }
@@ -57,8 +60,10 @@ export async function planWithCodex(request: string, apps: RokuApp[], model?: st
   args.push(prompt)
 
   const { stdout } = await execFileAsync("codex", args, {
-    timeout: 90_000,
+    timeout: aiTimeoutMs,
     maxBuffer: 1024 * 1024,
+  }).catch((error) => {
+    throw providerError("Codex", error)
   })
 
   const outputFile = Bun.file(outputPath)
@@ -72,8 +77,10 @@ export async function planWithClaude(request: string, apps: RokuApp[], model?: s
   if (model) args.push("--model", model)
 
   const { stdout } = await execFileAsync("claude", args, {
-    timeout: 90_000,
+    timeout: aiTimeoutMs,
     maxBuffer: 1024 * 1024,
+  }).catch((error) => {
+    throw providerError("Claude", error)
   })
   return parsePlan(stdout)
 }
@@ -211,6 +218,17 @@ function extractJson(output: string): string {
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/g, "")
+}
+
+function providerError(provider: string, error: unknown): Error {
+  const anyError = error as { code?: string; signal?: string; killed?: boolean; message?: string }
+  if (anyError.code === "ENOENT") {
+    return new Error(`${provider} CLI is not installed or not on PATH.`)
+  }
+  if (anyError.signal === "SIGTERM" || anyError.killed) {
+    return new Error(`${provider} timed out after ${Math.round(aiTimeoutMs / 1000)}s. Pick a faster model or set TVCTL_AI_TIMEOUT_MS.`)
+  }
+  return new Error(`${provider} failed: ${anyError.message ?? String(error)}`)
 }
 
 function sleep(ms: number): Promise<void> {

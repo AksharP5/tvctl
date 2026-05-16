@@ -1,12 +1,12 @@
 import { Box, Text, createCliRenderer, type KeyEvent } from "@opentui/core"
-import { defaultAiConfig } from "../ai"
+import { defaultAiConfig, deterministicPlan, executePlan, planWithAi } from "../ai"
 import { getAiConfig, setAiConfig } from "../config"
 import { launchApp } from "../roku/apps"
 import { RokuClient } from "../roku/client"
 import type { RokuApp, RokuDevice, RokuKey } from "../types"
 import { providers } from "./model"
 
-type ViewMode = "remote" | "apps" | "settings"
+type ViewMode = "remote" | "apps" | "settings" | "ask"
 
 interface RemoteState {
   activeApp?: RokuApp
@@ -20,6 +20,8 @@ interface RemoteState {
   providerIndex: number
   aiModel: string
   editingModel: boolean
+  askBuffer: string
+  askBusy: boolean
   lastKey?: string
 }
 
@@ -42,6 +44,8 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     providerIndex,
     aiModel: aiConfig?.model ?? defaultAiConfig.model ?? providers[providerIndex]?.suggestions[0] ?? "",
     editingModel: false,
+    askBuffer: "",
+    askBusy: false,
   }
 
   async function refresh(): Promise<void> {
@@ -85,7 +89,9 @@ export async function runRemote(device: RokuDevice): Promise<void> {
             ? appDrawer(state, compact)
             : state.view === "settings"
               ? settingsPanel(state, compact)
-              : remoteBody(state, compact),
+              : state.view === "ask"
+                ? askPanel(state, compact)
+                : remoteBody(state, compact),
         ),
         footer(state, compact),
       ),
@@ -156,11 +162,12 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     }
 
     if (key.name === "q" || key.name === "escape") {
-      if (state.view === "apps" || state.view === "settings") {
+      if (state.view === "apps" || state.view === "settings" || state.view === "ask") {
         state.view = "remote"
         state.appFilter = ""
         state.selectedAppIndex = 0
         state.editingModel = false
+        state.askBusy = false
         state.status = "Remote"
         draw()
         return
@@ -169,28 +176,41 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       return
     }
 
-    if (key.name === "a" || key.name === "tab") {
-      state.view = state.view === "apps" ? "remote" : "apps"
-      state.status = state.view === "apps" ? "Choose an app" : "Remote"
-      draw()
-      return
-    }
-
-    if (key.name === "c") {
-      state.view = state.view === "settings" ? "remote" : "settings"
-      state.editingModel = false
-      state.status = state.view === "settings" ? "AI settings" : "Remote"
-      draw()
-      return
-    }
-
     if (state.view === "apps") {
       await handleAppKey(key)
       return
     }
 
+    if (state.view === "ask") {
+      await handleAskKey(key)
+      return
+    }
+
     if (state.view === "settings") {
       await handleSettingsKey(key)
+      return
+    }
+
+    if (key.name === "a" || key.name === "tab") {
+      state.view = "apps"
+      state.status = "Choose an app"
+      draw()
+      return
+    }
+
+    if (key.name === "/") {
+      state.view = "ask"
+      state.askBuffer = ""
+      state.status = "Ask tvctl"
+      draw()
+      return
+    }
+
+    if (key.name === "c") {
+      state.view = "settings"
+      state.editingModel = false
+      state.status = "AI settings"
+      draw()
       return
     }
 
@@ -251,6 +271,53 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
       state.appFilter += key.sequence
       state.selectedAppIndex = 0
+      draw()
+    }
+  }
+
+  async function handleAskKey(key: KeyEvent): Promise<void> {
+    if (state.askBusy) return
+
+    if (key.name === "return") {
+      const request = state.askBuffer.trim()
+      if (!request) return
+
+      state.askBusy = true
+      state.status = `Planning: ${request}`
+      draw()
+      try {
+        let plan = deterministicPlan(request, state.apps)
+        if (!plan) {
+          const provider = providers[state.providerIndex] ?? providers[0]!
+          plan = await planWithAi(request, state.apps, { provider: provider.id, model: state.aiModel.trim() || undefined })
+        }
+        state.status = plan.summary
+        draw()
+        await executePlan(client, state.apps, plan)
+        state.status = `Done: ${plan.summary}`
+        state.askBuffer = ""
+        state.view = "remote"
+        await refresh()
+      } catch (error) {
+        state.status = error instanceof Error ? error.message : "Ask failed"
+        state.askBusy = false
+        draw()
+      }
+      return
+    }
+
+    if (key.ctrl && key.name === "u") {
+      state.askBuffer = ""
+      draw()
+      return
+    }
+    if (key.name === "backspace") {
+      state.askBuffer = state.askBuffer.slice(0, -1)
+      draw()
+      return
+    }
+    if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+      state.askBuffer += key.sequence
       draw()
     }
   }
@@ -516,6 +583,45 @@ function settingsPanel(state: RemoteState, compact: boolean) {
   )
 }
 
+function askPanel(state: RemoteState, compact: boolean) {
+  return Box(
+    {
+      width: compact ? 32 : 42,
+      height: compact ? 30 : 34,
+      borderStyle: "rounded",
+      borderColor: "#1F1F23",
+      paddingX: compact ? 2 : 3,
+      paddingY: 1,
+      gap: 1,
+      flexDirection: "column",
+      backgroundColor: "#111113",
+      title: " Ask ",
+      titleAlignment: "center",
+    },
+    Text({ content: "Tell tvctl what to do", fg: "#A1A1AA" }),
+    Box(
+      {
+        width: compact ? 26 : 34,
+        height: compact ? 5 : 7,
+        borderStyle: "rounded",
+        borderColor: state.askBusy ? "#7B2CBF" : "#2B2B30",
+        backgroundColor: "#18181B",
+        paddingX: 1,
+        paddingY: 1,
+      },
+      Text({
+        content: truncate(`${state.askBuffer}${state.askBusy ? "" : "_"}`, compact ? 22 : 30),
+        fg: "#FFFFFF",
+      }),
+    ),
+    Text({ content: "Examples", fg: "#A1A1AA" }),
+    Text({ content: "open prime", fg: "#D4D4D8" }),
+    Text({ content: "search youtube for drake album", fg: "#D4D4D8" }),
+    Text({ content: "mute the tv", fg: "#D4D4D8" }),
+    Text({ content: state.askBusy ? "Running..." : "Enter run · Ctrl+U clear · Esc remote", fg: "#71717A" }),
+  )
+}
+
 function typingPanel(state: RemoteState, compact: boolean) {
   const text = state.typing ? `Type: ${state.typeBuffer}_` : "Press i to type on TV"
   return Box(
@@ -537,9 +643,11 @@ function footer(state: RemoteState, compact: boolean) {
       ? "Apps: type to filter · Enter launch · Esc close"
       : state.view === "settings"
         ? "AI: up/down provider · Tab edit model · Enter save · Esc close"
+        : state.view === "ask"
+          ? "Ask: type request · Enter run · Esc close"
       : compact
-        ? "Enter OK · A apps · C AI · +/- volume · Q quit"
-        : "Enter OK · A apps · C AI · I type · +/- volume · 0 mute · O on · X off · Q quit"
+        ? "/ ask · A apps · C AI · +/- volume · Q quit"
+        : "/ ask · Enter OK · A apps · C AI · I type · +/- volume · 0 mute · O on · X off · Q quit"
 
   return Box(
     {
