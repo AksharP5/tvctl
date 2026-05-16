@@ -1,9 +1,12 @@
 import { Box, Text, createCliRenderer, type KeyEvent } from "@opentui/core"
+import { defaultAiConfig } from "../ai"
+import { getAiConfig, setAiConfig } from "../config"
 import { launchApp } from "../roku/apps"
 import { RokuClient } from "../roku/client"
 import type { RokuApp, RokuDevice, RokuKey } from "../types"
+import { providers } from "./model"
 
-type ViewMode = "remote" | "apps"
+type ViewMode = "remote" | "apps" | "settings"
 
 interface RemoteState {
   activeApp?: RokuApp
@@ -14,12 +17,20 @@ interface RemoteState {
   typeBuffer: string
   appFilter: string
   selectedAppIndex: number
+  providerIndex: number
+  aiModel: string
+  editingModel: boolean
   lastKey?: string
 }
 
 export async function runRemote(device: RokuDevice): Promise<void> {
   const client = new RokuClient(device.host)
   const renderer = await createCliRenderer({ exitOnCtrlC: true })
+  const aiConfig = await getAiConfig()
+  const providerIndex = Math.max(
+    0,
+    providers.findIndex((provider) => provider.id === (aiConfig?.provider ?? defaultAiConfig.provider)),
+  )
   const state: RemoteState = {
     apps: [],
     status: "Connecting",
@@ -28,6 +39,9 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     typeBuffer: "",
     appFilter: "",
     selectedAppIndex: 0,
+    providerIndex,
+    aiModel: aiConfig?.model ?? defaultAiConfig.model ?? providers[providerIndex]?.suggestions[0] ?? "",
+    editingModel: false,
   }
 
   async function refresh(): Promise<void> {
@@ -67,7 +81,11 @@ export async function runRemote(device: RokuDevice): Promise<void> {
             flexDirection: "column",
             alignItems: "center",
           },
-          state.view === "apps" ? appDrawer(state, compact) : remoteBody(state, compact),
+          state.view === "apps"
+            ? appDrawer(state, compact)
+            : state.view === "settings"
+              ? settingsPanel(state, compact)
+              : remoteBody(state, compact),
         ),
         footer(state, compact),
       ),
@@ -138,10 +156,11 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     }
 
     if (key.name === "q" || key.name === "escape") {
-      if (state.view === "apps") {
+      if (state.view === "apps" || state.view === "settings") {
         state.view = "remote"
         state.appFilter = ""
         state.selectedAppIndex = 0
+        state.editingModel = false
         state.status = "Remote"
         draw()
         return
@@ -157,8 +176,21 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       return
     }
 
+    if (key.name === "c") {
+      state.view = state.view === "settings" ? "remote" : "settings"
+      state.editingModel = false
+      state.status = state.view === "settings" ? "AI settings" : "Remote"
+      draw()
+      return
+    }
+
     if (state.view === "apps") {
       await handleAppKey(key)
+      return
+    }
+
+    if (state.view === "settings") {
+      await handleSettingsKey(key)
       return
     }
 
@@ -219,6 +251,54 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
       state.appFilter += key.sequence
       state.selectedAppIndex = 0
+      draw()
+    }
+  }
+
+  async function handleSettingsKey(key: KeyEvent): Promise<void> {
+    if (key.name === "return") {
+      const provider = providers[state.providerIndex] ?? providers[0]!
+      const model = state.aiModel.trim()
+      await setAiConfig({ provider: provider.id, model: model || undefined })
+      state.status = `Saved ${provider.label}${model ? ` / ${model}` : ""}`
+      state.editingModel = false
+      draw()
+      return
+    }
+
+    if (key.name === "tab") {
+      state.editingModel = !state.editingModel
+      draw()
+      return
+    }
+
+    if (state.editingModel) {
+      if (key.ctrl && key.name === "u") {
+        state.aiModel = ""
+        draw()
+        return
+      }
+      if (key.name === "backspace") {
+        state.aiModel = state.aiModel.slice(0, -1)
+        draw()
+        return
+      }
+      if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+        state.aiModel += key.sequence
+        draw()
+      }
+      return
+    }
+
+    if (key.name === "up" || key.name === "k") {
+      state.providerIndex = Math.max(0, state.providerIndex - 1)
+      state.aiModel = providers[state.providerIndex]?.suggestions[0] ?? state.aiModel
+      draw()
+      return
+    }
+    if (key.name === "down" || key.name === "j") {
+      state.providerIndex = Math.min(providers.length - 1, state.providerIndex + 1)
+      state.aiModel = providers[state.providerIndex]?.suggestions[0] ?? state.aiModel
       draw()
     }
   }
@@ -391,6 +471,51 @@ function appDrawer(state: RemoteState, compact: boolean) {
   )
 }
 
+function settingsPanel(state: RemoteState, compact: boolean) {
+  const provider = providers[state.providerIndex] ?? providers[0]!
+  return Box(
+    {
+      width: compact ? 32 : 42,
+      height: compact ? 30 : 34,
+      borderStyle: "rounded",
+      borderColor: "#1F1F23",
+      paddingX: compact ? 2 : 3,
+      paddingY: 1,
+      gap: 1,
+      flexDirection: "column",
+      backgroundColor: "#111113",
+      title: " AI ",
+      titleAlignment: "center",
+    },
+    Text({ content: "Provider", fg: "#A1A1AA" }),
+    ...providers.map((item, index) =>
+      Text({
+        content: `${index === state.providerIndex ? ">" : " "} ${item.label.padEnd(compact ? 8 : 9)}`,
+        fg: index === state.providerIndex ? "#FFFFFF" : "#D4D4D8",
+        bg: index === state.providerIndex ? "#6F1AB1" : undefined,
+      }),
+    ),
+    Text({ content: "Model", fg: "#A1A1AA" }),
+    Box(
+      {
+        width: compact ? 26 : 34,
+        borderStyle: "rounded",
+        borderColor: state.editingModel ? "#6F1AB1" : "#2B2B30",
+        backgroundColor: "#18181B",
+        paddingX: 1,
+        paddingY: compact ? 0 : 1,
+      },
+      Text({
+        content: truncate(`${state.aiModel}${state.editingModel ? "_" : ""}`, compact ? 22 : 30),
+        fg: state.editingModel ? "#FFFFFF" : "#D4D4D8",
+      }),
+    ),
+    Text({ content: truncate(provider.description, compact ? 26 : 34), fg: "#71717A" }),
+    Text({ content: truncate(`Try: ${provider.suggestions.join(", ")}`, compact ? 26 : 34), fg: "#71717A" }),
+    Text({ content: "Tab edit · Enter save · Esc remote", fg: "#A1A1AA" }),
+  )
+}
+
 function typingPanel(state: RemoteState, compact: boolean) {
   const text = state.typing ? `Type: ${state.typeBuffer}_` : "Press i to type on TV"
   return Box(
@@ -410,9 +535,11 @@ function footer(state: RemoteState, compact: boolean) {
   const content =
     state.view === "apps"
       ? "Apps: type to filter · Enter launch · Esc close"
+      : state.view === "settings"
+        ? "AI: up/down provider · Tab edit model · Enter save · Esc close"
       : compact
-        ? "Enter OK · A apps · +/- volume · Q quit"
-        : "Enter OK · A apps · I type · +/- volume · 0 mute · O on · X off · Q quit"
+        ? "Enter OK · A apps · C AI · +/- volume · Q quit"
+        : "Enter OK · A apps · C AI · I type · +/- volume · 0 mute · O on · X off · Q quit"
 
   return Box(
     {
@@ -487,4 +614,8 @@ function filteredApps(state: RemoteState): RokuApp[] {
   const query = state.appFilter.toLowerCase().trim()
   if (!query) return state.apps
   return state.apps.filter((app) => app.name.toLowerCase().includes(query) || app.id.toLowerCase().includes(query))
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, Math.max(0, maxLength - 1))}…`
 }

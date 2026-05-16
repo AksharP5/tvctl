@@ -3,14 +3,14 @@ import { defaultAiConfig } from "../ai"
 import { getAiConfig, setAiConfig } from "../config"
 import type { TvctlAiProvider } from "../types"
 
-interface ProviderOption {
+export interface ProviderOption {
   id: TvctlAiProvider
   label: string
   description: string
   suggestions: string[]
 }
 
-const providers: ProviderOption[] = [
+export const providers: ProviderOption[] = [
   {
     id: "opencode",
     label: "OpenCode",
