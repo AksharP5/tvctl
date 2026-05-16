@@ -19,7 +19,7 @@ export interface TvctlConfig {
   ai?: TvctlAiConfig
 }
 
-export type TvctlAiProvider = "opencode"
+export type TvctlAiProvider = "opencode" | "codex" | "claude"
 
 export interface TvctlAiConfig {
   provider: TvctlAiProvider

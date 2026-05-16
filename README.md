@@ -23,6 +23,7 @@ After discovery, `tvctl` saves the first Roku as your default device in `~/.conf
 
 ```bash
 tvctl                 # Open the OpenTUI remote
+tvctl --model         # Open provider/model setup
 tvctl remote          # Same as above
 tvctl discover        # Find Roku TVs on your local network
 tvctl ask "open YouTube and search Drake album"
@@ -46,16 +47,26 @@ tvctl mute
 
 Common requests are planned locally and do not require AI. Ambiguous requests can fall back to an AI planner.
 
-The AI planner currently uses the `opencode` CLI as its provider bridge. That means AI fallback requires OpenCode to be installed and authenticated, but you can use any model/provider that your OpenCode setup supports.
+The suggested default is OpenCode with `opencode/big-pickle`, because it has been consistently free. It can be slower than using the physical remote for tiny tasks, so users with Codex, Claude, or paid OpenCode-backed models should pick a faster model.
 
 Configure the planner:
 
 ```bash
+tvctl --model
 tvctl ai
 tvctl ai-config --provider opencode --model opencode/big-pickle
-tvctl ai-config --provider opencode --model anthropic/claude-sonnet-4-5
-tvctl ask --model openai/gpt-5.4 "open spotify and search future"
+tvctl ai-config --provider codex --model gpt-5.1-codex-mini
+tvctl ai-config --provider claude --model claude-sonnet-4-5
+tvctl ask --model gpt-5.4 "open spotify and search future"
 ```
+
+Provider support:
+
+- `opencode`: uses `opencode run -m <model>`.
+- `codex`: uses `codex exec -m <model>`.
+- `claude`: uses `claude -p --model <model>`.
+
+Direct commands such as `tvctl netflix`, `tvctl youtube search drake album`, and `tvctl go home` do not require any AI provider.
 
 Pass `--host <ip>` to any device command to skip discovery/config:
 

@@ -1,11 +1,16 @@
 import { execFile } from "node:child_process"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 import { promisify } from "node:util"
 import { findApp, launchApp } from "./roku/apps"
 import { RokuClient } from "./roku/client"
 import type { RokuApp, RokuKey, TvctlAiConfig } from "./types"
 
 const execFileAsync = promisify(execFile)
-const fallbackOpenCodeModel = "opencode/qwen3.6-plus-free"
+export const defaultAiConfig = {
+  provider: "opencode",
+  model: "opencode/big-pickle",
+} satisfies TvctlAiConfig
 
 export type TvAction =
   | { action: "launch"; app: string }
@@ -19,9 +24,17 @@ export interface TvPlan {
 }
 
 export async function planWithAi(request: string, apps: RokuApp[], config?: TvctlAiConfig, modelOverride?: string): Promise<TvPlan> {
-  const provider = config?.provider ?? "opencode"
+  const provider = config?.provider ?? defaultAiConfig.provider
+  const model = modelOverride ?? config?.model ?? process.env.TVCTL_AI_MODEL ?? defaultAiConfig.model
+
   if (provider === "opencode") {
-    return planWithOpenCode(request, apps, modelOverride ?? config?.model ?? process.env.TVCTL_AI_MODEL ?? fallbackOpenCodeModel)
+    return planWithOpenCode(request, apps, model)
+  }
+  if (provider === "codex") {
+    return planWithCodex(request, apps, model)
+  }
+  if (provider === "claude") {
+    return planWithClaude(request, apps, model)
   }
 
   throw new Error(`Unsupported AI provider: ${provider}`)
@@ -30,6 +43,35 @@ export async function planWithAi(request: string, apps: RokuApp[], config?: Tvct
 export async function planWithOpenCode(request: string, apps: RokuApp[], model: string): Promise<TvPlan> {
   const prompt = buildPrompt(request, apps)
   const { stdout } = await execFileAsync("opencode", ["run", "-m", model, prompt], {
+    timeout: 90_000,
+    maxBuffer: 1024 * 1024,
+  })
+  return parsePlan(stdout)
+}
+
+export async function planWithCodex(request: string, apps: RokuApp[], model?: string): Promise<TvPlan> {
+  const prompt = buildPrompt(request, apps)
+  const outputPath = join(tmpdir(), `tvctl-codex-plan-${Date.now()}.json`)
+  const args = ["exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-o", outputPath]
+  if (model) args.push("-m", model)
+  args.push(prompt)
+
+  const { stdout } = await execFileAsync("codex", args, {
+    timeout: 90_000,
+    maxBuffer: 1024 * 1024,
+  })
+
+  const outputFile = Bun.file(outputPath)
+  const output = (await outputFile.exists()) ? await outputFile.text() : stdout
+  return parsePlan(output)
+}
+
+export async function planWithClaude(request: string, apps: RokuApp[], model?: string): Promise<TvPlan> {
+  const prompt = buildPrompt(request, apps)
+  const args = ["-p", prompt, "--output-format", "text"]
+  if (model) args.push("--model", model)
+
+  const { stdout } = await execFileAsync("claude", args, {
     timeout: 90_000,
     maxBuffer: 1024 * 1024,
   })
@@ -157,12 +199,14 @@ function parsePlan(output: string): TvPlan {
 }
 
 function extractJson(output: string): string {
-  const start = output.indexOf("{")
-  const end = output.lastIndexOf("}")
+  const fenced = output.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const source = fenced?.[1] ?? output
+  const start = source.indexOf("{")
+  const end = source.lastIndexOf("}")
   if (start === -1 || end === -1 || end <= start) {
     throw new Error("AI did not return a JSON plan.")
   }
-  return output.slice(start, end + 1)
+  return source.slice(start, end + 1)
 }
 
 function stripAnsi(value: string): string {

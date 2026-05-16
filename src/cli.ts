@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 import { cac } from "cac"
-import { deterministicPlan, executePlan, planWithAi } from "./ai"
+import { defaultAiConfig, deterministicPlan, executePlan, planWithAi } from "./ai"
 import { getAiConfig, getConfigPath, setAiConfig, setDefaultDevice } from "./config"
 import { formatDevice, resolveDevice } from "./device"
 import { findApp, launchApp, searchInApp } from "./roku/apps"
 import { RokuClient } from "./roku/client"
 import { discoverRokus } from "./roku/discover"
+import { runModelSetup } from "./tui/model"
 import { runRemote } from "./tui/remote"
 import type { RokuKey } from "./types"
 
@@ -20,9 +21,19 @@ interface AskOptions extends HostOptions {
   model?: string
 }
 
+interface RootOptions extends HostOptions {
+  model?: boolean
+}
+
 interface AiConfigOptions {
   provider?: string
   model?: string
+}
+
+const startupArgs = process.argv.slice(2)
+if (startupArgs.length === 1 && startupArgs[0] === "--model") {
+  await runModelSetup()
+  process.exit(0)
 }
 
 await maybeRunAppShortcut()
@@ -30,7 +41,12 @@ await maybeRunAppShortcut()
 cli
   .command("", "Open the Roku terminal remote")
   .option("--host <host>", "Roku host or IP address")
-  .action(async (options: HostOptions) => {
+  .option("--model", "Open model/provider setup")
+  .action(async (options: RootOptions) => {
+    if (options.model) {
+      await runModelSetup()
+      return
+    }
     const device = await resolveDevice(options.host)
     await runRemote(device)
   })
@@ -72,28 +88,28 @@ cli
   .action(async () => {
     const config = await getAiConfig()
     if (!config) {
-      console.log("AI provider: opencode")
-      console.log("AI model: opencode/qwen3.6-plus-free")
+      console.log(`AI provider: ${defaultAiConfig.provider}`)
+      console.log(`AI model: ${defaultAiConfig.model}`)
       console.log("Note: AI fallback requires the opencode CLI unless the request can be planned locally.")
       return
     }
     console.log(`AI provider: ${config.provider}`)
-    console.log(`AI model: ${config.model ?? "opencode/qwen3.6-plus-free"}`)
+    console.log(`AI model: ${config.model ?? defaultAiConfig.model}`)
   })
 
 cli
   .command("ai-config", "Configure the AI planner")
-  .option("--provider <provider>", "Planner provider. Currently: opencode")
-  .option("--model <model>", "Model id, for example opencode/big-pickle or anthropic/claude-sonnet-4-5")
+  .option("--provider <provider>", "Planner provider: opencode, codex, or claude")
+  .option("--model <model>", "Model id for the selected provider")
   .action(async (options: AiConfigOptions) => {
     const provider = options.provider ?? "opencode"
-    if (provider !== "opencode") {
-      throw new Error("Only the opencode AI provider is implemented right now.")
+    if (provider !== "opencode" && provider !== "codex" && provider !== "claude") {
+      throw new Error("Provider must be one of: opencode, codex, claude.")
     }
 
     await setAiConfig({ provider, model: options.model })
     console.log(`Saved AI provider: ${provider}`)
-    console.log(`Saved AI model: ${options.model ?? "opencode/qwen3.6-plus-free"}`)
+    console.log(`Saved AI model: ${options.model ?? defaultAiConfig.model}`)
   })
 
 cli
@@ -200,7 +216,7 @@ async function runAiRequest(request: string, options: AskOptions): Promise<void>
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(
         `Could not plan that TV request with AI: ${message}\n` +
-          "Configure AI with `tvctl ai config --provider opencode --model <provider/model>` or use a direct command like `tvctl netflix`.",
+          "Configure AI with `tvctl --model` or use a direct command like `tvctl netflix`.",
       )
     }
   }
