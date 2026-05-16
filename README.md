@@ -115,6 +115,7 @@ tvctl apps --host 192.168.1.20
 - Arrow keys or `h`/`j`/`k`/`l`: move
 - `Enter` or `Space`: OK/select
 - `/`: ask tvctl to run a TV request
+- `t`: find and switch Roku TVs
 - `m`: Home
 - `b`: Back
 - `s`: Search
@@ -134,6 +135,8 @@ tvctl apps --host 192.168.1.20
 - `q` or `Esc`: quit
 
 Press `a` or `Tab` to open apps, type to filter, and press `Enter` to launch the selected app.
+
+Press `t` to open the TV switcher. It discovers Roku TVs on the network, marks the current TV, and saves the selected TV as the default when you switch.
 
 ## Roku Support
 

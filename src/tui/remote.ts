@@ -1,22 +1,25 @@
 import { Box, Text, createCliRenderer, type KeyEvent } from "@opentui/core"
 import { defaultAiConfig, deterministicPlan, executePlan, planWithAi } from "../ai"
-import { getAiConfig, setAiConfig } from "../config"
+import { getAiConfig, setAiConfig, setDefaultDevice } from "../config"
 import { launchApp } from "../roku/apps"
 import { RokuClient } from "../roku/client"
+import { discoverRokus } from "../roku/discover"
 import type { RokuApp, RokuDevice, RokuKey } from "../types"
 import { providers } from "./model"
 
-type ViewMode = "remote" | "apps" | "settings" | "ask"
+type ViewMode = "remote" | "apps" | "settings" | "ask" | "tvs"
 
 interface RemoteState {
   activeApp?: RokuApp
   apps: RokuApp[]
+  devices: RokuDevice[]
   status: string
   view: ViewMode
   typing: boolean
   typeBuffer: string
   appFilter: string
   selectedAppIndex: number
+  selectedDeviceIndex: number
   providerIndex: number
   aiModel: string
   editingModel: boolean
@@ -26,7 +29,8 @@ interface RemoteState {
 }
 
 export async function runRemote(device: RokuDevice): Promise<void> {
-  const client = new RokuClient(device.host)
+  let currentDevice = device
+  let client = new RokuClient(currentDevice.host)
   const renderer = await createCliRenderer({ exitOnCtrlC: true })
   const aiConfig = await getAiConfig()
   const providerIndex = Math.max(
@@ -35,12 +39,14 @@ export async function runRemote(device: RokuDevice): Promise<void> {
   )
   const state: RemoteState = {
     apps: [],
+    devices: [device],
     status: "Connecting",
     view: "remote",
     typing: false,
     typeBuffer: "",
     appFilter: "",
     selectedAppIndex: 0,
+    selectedDeviceIndex: 0,
     providerIndex,
     aiModel: aiConfig?.model ?? defaultAiConfig.model ?? providers[providerIndex]?.suggestions[0] ?? "",
     editingModel: false,
@@ -53,7 +59,7 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       const [activeApp, apps] = await Promise.all([client.activeApp(), client.apps()])
       state.activeApp = activeApp
       state.apps = apps
-      state.status = "Ready"
+      state.status = `${currentDevice.name} ready`
     } catch (error) {
       state.status = error instanceof Error ? error.message : "Unable to refresh"
     }
@@ -76,9 +82,9 @@ export async function runRemote(device: RokuDevice): Promise<void> {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#050505",
+          backgroundColor: "#030304",
         },
-        compact ? compactHeader(device, state) : header(device, state),
+        compact ? compactHeader(currentDevice, state) : header(currentDevice, state),
         Box(
           {
             width: compact ? 32 : 42,
@@ -91,7 +97,9 @@ export async function runRemote(device: RokuDevice): Promise<void> {
               ? settingsPanel(state, compact)
               : state.view === "ask"
                 ? askPanel(state, compact)
-                : remoteBody(state, compact),
+                : state.view === "tvs"
+                  ? tvPanel(state, currentDevice, compact)
+                  : remoteBody(state, compact),
         ),
         footer(state, compact),
       ),
@@ -109,6 +117,36 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       state.status = error instanceof Error ? error.message : `Failed to send ${key}`
     }
     draw()
+  }
+
+  async function refreshDevices(): Promise<void> {
+    state.status = "Finding Roku TVs"
+    draw()
+    try {
+      const devices = await discoverRokus()
+      state.devices = devices.length > 0 ? devices : [currentDevice]
+      const currentIndex = state.devices.findIndex((item) => item.host === currentDevice.host)
+      state.selectedDeviceIndex = currentIndex >= 0 ? currentIndex : 0
+      state.status = `${state.devices.length} Roku TV${state.devices.length === 1 ? "" : "s"} found`
+    } catch (error) {
+      state.status = error instanceof Error ? error.message : "TV discovery failed"
+    }
+    draw()
+  }
+
+  async function switchDevice(): Promise<void> {
+    const next = state.devices[state.selectedDeviceIndex]
+    if (!next) return
+
+    currentDevice = next
+    client = new RokuClient(next.host)
+    await setDefaultDevice(next)
+    state.activeApp = undefined
+    state.apps = []
+    state.view = "remote"
+    state.status = `Switched to ${next.name}`
+    draw()
+    await refresh()
   }
 
   async function launchSelectedApp(): Promise<void> {
@@ -162,7 +200,7 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     }
 
     if (key.name === "q" || key.name === "escape") {
-      if (state.view === "apps" || state.view === "settings" || state.view === "ask") {
+      if (state.view === "apps" || state.view === "settings" || state.view === "ask" || state.view === "tvs") {
         state.view = "remote"
         state.appFilter = ""
         state.selectedAppIndex = 0
@@ -191,6 +229,11 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       return
     }
 
+    if (state.view === "tvs") {
+      await handleTvKey(key)
+      return
+    }
+
     if (key.name === "a" || key.name === "tab") {
       state.view = "apps"
       state.status = "Choose an app"
@@ -211,6 +254,14 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       state.editingModel = false
       state.status = "AI settings"
       draw()
+      return
+    }
+
+    if (key.name === "t") {
+      state.view = "tvs"
+      state.status = "Choose a TV"
+      draw()
+      void refreshDevices()
       return
     }
 
@@ -370,6 +421,26 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     }
   }
 
+  async function handleTvKey(key: KeyEvent): Promise<void> {
+    if (key.name === "up" || key.name === "k") {
+      state.selectedDeviceIndex = Math.max(0, state.selectedDeviceIndex - 1)
+      draw()
+      return
+    }
+    if (key.name === "down" || key.name === "j") {
+      state.selectedDeviceIndex = Math.min(Math.max(0, state.devices.length - 1), state.selectedDeviceIndex + 1)
+      draw()
+      return
+    }
+    if (key.name === "return" || key.name === "space") {
+      await switchDevice()
+      return
+    }
+    if (key.name === "f5" || key.name === "r") {
+      await refreshDevices()
+    }
+  }
+
   async function handleRemoteKey(key: KeyEvent): Promise<void> {
     switch (key.name) {
       case "up":
@@ -454,49 +525,49 @@ export async function runRemote(device: RokuDevice): Promise<void> {
 function header(device: RokuDevice, state: RemoteState) {
   return Box(
     {
-      width: 46,
+      width: 60,
       paddingX: 1,
       flexDirection: "column",
       alignItems: "center",
     },
-    Text({ content: "tvctl", fg: "#6F1AB1" }),
-    Text({ content: `${device.name} · ${state.activeApp?.name ?? "unknown"}`, fg: "#A1A1AA" }),
-    Text({ content: state.status, fg: "#71717A" }),
+    Text({ content: "tvctl", fg: "#8B5CF6" }),
+    Text({ content: `${device.name}  ·  ${state.activeApp?.name ?? "unknown"}`, fg: "#F4F4F5" }),
+    Text({ content: state.status, fg: "#8B8B93" }),
   )
 }
 
 function compactHeader(device: RokuDevice, state: RemoteState) {
   return Box(
     { width: 36, flexDirection: "column", alignItems: "center" },
-    Text({ content: `${device.name}`, fg: "#A1A1AA" }),
-    Text({ content: `${state.activeApp?.name ?? "unknown"} · ${state.status}`, fg: "#71717A" }),
+    Text({ content: `${device.name}`, fg: "#F4F4F5" }),
+    Text({ content: `${state.activeApp?.name ?? "unknown"} · ${state.status}`, fg: "#8B8B93" }),
   )
 }
 
 function remoteBody(state: RemoteState, compact: boolean) {
   return Box(
     {
-      width: compact ? 28 : 32,
-      height: compact ? 28 : 36,
-      borderStyle: "rounded",
-      borderColor: "#222226",
-      paddingX: compact ? 1 : 2,
+      width: compact ? 30 : 34,
+      height: compact ? 29 : 37,
+      paddingX: compact ? 2 : 3,
       paddingY: compact ? 0 : 1,
       gap: compact ? 0 : 1,
       flexDirection: "column",
       alignItems: "center",
-      backgroundColor: "#111113",
+      backgroundColor: "#0C0C0F",
     },
-    Text({ content: "Roku", fg: "#7B2CBF" }),
-    buttonRow([pillButton("ON", "o", "purple", compact), pillButton("OFF", "x", "dark", compact)]),
-    buttonRow([pillButton("HOME", "m", "purple", compact), pillButton("BACK", "b", "dark", compact)]),
+    accentBar(compact),
+    Text({ content: "ROKU", fg: "#A855F7" }),
+    buttonRow([pillButton("ON", "o", "quiet", compact), pillButton("OFF", "x", "quiet", compact)]),
+    buttonRow([pillButton("HOME", "m", "purple", compact), pillButton("BACK", "b", "quiet", compact)]),
     dpad(compact),
-    buttonRow([pillButton("SEARCH", "s", "dark", compact), pillButton("APPS", "a", "purple", compact)]),
+    buttonRow([pillButton("ASK", "/", "purple", compact), pillButton("APPS", "a", "purple", compact)]),
+    buttonRow([pillButton("TVS", "t", "quiet", compact), pillButton("AI", "c", "quiet", compact)]),
     buttonRow([roundButton("VOL+", "+", compact), roundButton("MUTE", "0", compact), roundButton("VOL-", "-", compact)]),
-    buttonRow([pillButton("REW", "[", "dark", compact), pillButton("PLAY", "p", "dark", compact), pillButton("FWD", "]", "dark", compact)]),
-    buttonRow([pillButton("INFO", "?", "dark", compact), pillButton("REPLAY", "r", "dark", compact)]),
+    buttonRow([pillButton("REW", "[", "quiet", compact), pillButton("PLAY", "p", "quiet", compact), pillButton("FWD", "]", "quiet", compact)]),
+    buttonRow([pillButton("SEARCH", "s", "quiet", compact), pillButton("INFO", "?", "quiet", compact), pillButton("REPLAY", "r", "quiet", compact)]),
     typingPanel(state, compact),
-    Text({ content: state.lastKey ? `Last: ${state.lastKey}` : "arrows / hjkl move", fg: "#71717A" }),
+    Text({ content: state.lastKey ? `Last ${state.lastKey}` : "arrows / hjkl move", fg: "#8B8B93" }),
   )
 }
 
@@ -521,20 +592,17 @@ function appDrawer(state: RemoteState, compact: boolean) {
     {
       width: compact ? 32 : 42,
       height: compact ? 30 : 34,
-      borderStyle: "rounded",
-      borderColor: "#1F1F23",
       paddingX: compact ? 2 : 3,
       paddingY: 1,
       gap: 1,
       flexDirection: "column",
-      backgroundColor: "#111113",
-      title: " Apps ",
-      titleAlignment: "center",
+      backgroundColor: "#0C0C0F",
     },
-    Text({ content: "Type to filter · Enter launches", fg: "#A1A1AA" }),
-    Text({ content: state.appFilter ? `Search: ${state.appFilter}_` : "Search: _", fg: "#71717A" }),
+    accentBar(compact),
+    Text({ content: "Apps", fg: "#F4F4F5" }),
+    Text({ content: state.appFilter ? `filter ${state.appFilter}_` : "type to filter", fg: "#8B8B93" }),
     ...rows,
-    Text({ content: `${apps.length ? start + 1 : 0}-${Math.min(start + visibleCount, apps.length)} of ${apps.length}`, fg: "#71717A" }),
+    Text({ content: `${apps.length ? start + 1 : 0}-${Math.min(start + visibleCount, apps.length)} of ${apps.length} · Enter launches`, fg: "#8B8B93" }),
   )
 }
 
@@ -544,31 +612,27 @@ function settingsPanel(state: RemoteState, compact: boolean) {
     {
       width: compact ? 32 : 42,
       height: compact ? 30 : 34,
-      borderStyle: "rounded",
-      borderColor: "#1F1F23",
       paddingX: compact ? 2 : 3,
       paddingY: 1,
       gap: 1,
       flexDirection: "column",
-      backgroundColor: "#111113",
-      title: " AI ",
-      titleAlignment: "center",
+      backgroundColor: "#0C0C0F",
     },
+    accentBar(compact),
+    Text({ content: "AI settings", fg: "#F4F4F5" }),
     Text({ content: "Provider", fg: "#A1A1AA" }),
     ...providers.map((item, index) =>
       Text({
         content: `${index === state.providerIndex ? ">" : " "} ${item.label.padEnd(compact ? 8 : 9)}`,
         fg: index === state.providerIndex ? "#FFFFFF" : "#D4D4D8",
-        bg: index === state.providerIndex ? "#6F1AB1" : undefined,
+        bg: index === state.providerIndex ? "#7C3AED" : undefined,
       }),
     ),
     Text({ content: "Model", fg: "#A1A1AA" }),
     Box(
       {
         width: compact ? 26 : 34,
-        borderStyle: "rounded",
-        borderColor: state.editingModel ? "#6F1AB1" : "#2B2B30",
-        backgroundColor: "#18181B",
+        backgroundColor: state.editingModel ? "#2A173F" : "#17171B",
         paddingX: 1,
         paddingY: compact ? 0 : 1,
       },
@@ -577,8 +641,8 @@ function settingsPanel(state: RemoteState, compact: boolean) {
         fg: state.editingModel ? "#FFFFFF" : "#D4D4D8",
       }),
     ),
-    Text({ content: truncate(provider.description, compact ? 26 : 34), fg: "#71717A" }),
-    Text({ content: truncate(`Try: ${provider.suggestions.join(", ")}`, compact ? 26 : 34), fg: "#71717A" }),
+    Text({ content: truncate(provider.description, compact ? 26 : 34), fg: "#8B8B93" }),
+    Text({ content: truncate(`Try: ${provider.suggestions.join(", ")}`, compact ? 26 : 34), fg: "#8B8B93" }),
     Text({ content: "Tab edit · Enter save · Esc remote", fg: "#A1A1AA" }),
   )
 }
@@ -588,24 +652,20 @@ function askPanel(state: RemoteState, compact: boolean) {
     {
       width: compact ? 32 : 42,
       height: compact ? 30 : 34,
-      borderStyle: "rounded",
-      borderColor: "#1F1F23",
       paddingX: compact ? 2 : 3,
       paddingY: 1,
       gap: 1,
       flexDirection: "column",
-      backgroundColor: "#111113",
-      title: " Ask ",
-      titleAlignment: "center",
+      backgroundColor: "#0C0C0F",
     },
-    Text({ content: "Tell tvctl what to do", fg: "#A1A1AA" }),
+    accentBar(compact),
+    Text({ content: "Ask tvctl", fg: "#F4F4F5" }),
+    Text({ content: "Type a TV request", fg: "#A1A1AA" }),
     Box(
       {
         width: compact ? 26 : 34,
         height: compact ? 5 : 7,
-        borderStyle: "rounded",
-        borderColor: state.askBusy ? "#7B2CBF" : "#2B2B30",
-        backgroundColor: "#18181B",
+        backgroundColor: state.askBusy ? "#2A173F" : "#17171B",
         paddingX: 1,
         paddingY: 1,
       },
@@ -618,7 +678,46 @@ function askPanel(state: RemoteState, compact: boolean) {
     Text({ content: "open prime", fg: "#D4D4D8" }),
     Text({ content: "search youtube for drake album", fg: "#D4D4D8" }),
     Text({ content: "mute the tv", fg: "#D4D4D8" }),
-    Text({ content: state.askBusy ? "Running..." : "Enter run · Ctrl+U clear · Esc remote", fg: "#71717A" }),
+    Text({ content: state.askBusy ? "Running..." : "Enter run · Ctrl+U clear · Esc remote", fg: "#8B8B93" }),
+  )
+}
+
+function tvPanel(state: RemoteState, currentDevice: RokuDevice, compact: boolean) {
+  const visibleCount = compact ? 10 : 12
+  const start = Math.max(
+    0,
+    Math.min(state.selectedDeviceIndex - Math.floor(visibleCount / 2), Math.max(0, state.devices.length - visibleCount)),
+  )
+  const visibleDevices = state.devices.slice(start, start + visibleCount)
+
+  return Box(
+    {
+      width: compact ? 32 : 42,
+      height: compact ? 30 : 34,
+      paddingX: compact ? 2 : 3,
+      paddingY: 1,
+      gap: 1,
+      flexDirection: "column",
+      backgroundColor: "#0C0C0F",
+    },
+    accentBar(compact),
+    Text({ content: "Roku TVs", fg: "#F4F4F5" }),
+    Text({ content: "Enter switches · R refreshes", fg: "#8B8B93" }),
+    ...visibleDevices.map((device, offset) => {
+      const index = start + offset
+      const selected = index === state.selectedDeviceIndex
+      const current = device.host === currentDevice.host
+      const name = truncate(device.name, compact ? 18 : 26)
+      return Text({
+        content: `${selected ? ">" : " "} ${current ? "●" : " "} ${name}`,
+        fg: selected ? "#FFFFFF" : current ? "#C084FC" : "#D4D4D8",
+        bg: selected ? "#7C3AED" : undefined,
+      })
+    }),
+    Text({
+      content: `${state.devices.length ? start + 1 : 0}-${Math.min(start + visibleCount, state.devices.length)} of ${state.devices.length}`,
+      fg: "#8B8B93",
+    }),
   )
 }
 
@@ -627,13 +726,11 @@ function typingPanel(state: RemoteState, compact: boolean) {
   return Box(
     {
       width: compact ? 24 : 28,
-      borderStyle: "rounded",
-      borderColor: state.typing ? "#6F1AB1" : "#27272A",
       paddingX: 1,
       paddingY: compact ? 0 : 1,
-      backgroundColor: "#18181B",
+      backgroundColor: state.typing ? "#2A173F" : "#17171B",
     },
-    Text({ content: text, fg: state.typing ? "#FFFFFF" : "#71717A" }),
+    Text({ content: text, fg: state.typing ? "#FFFFFF" : "#8B8B93" }),
   )
 }
 
@@ -643,20 +740,20 @@ function footer(state: RemoteState, compact: boolean) {
       ? "Apps: type to filter · Enter launch · Esc close"
       : state.view === "settings"
         ? "AI: up/down provider · Tab edit model · Enter save · Esc close"
-        : state.view === "ask"
+      : state.view === "ask"
           ? "Ask: type request · Enter run · Esc close"
+          : state.view === "tvs"
+            ? "TVs: up/down choose · Enter switch · R refresh · Esc close"
       : compact
-        ? "/ ask · A apps · C AI · +/- volume · Q quit"
-        : "/ ask · Enter OK · A apps · C AI · I type · +/- volume · 0 mute · O on · X off · Q quit"
+        ? "/ ask · A apps · T TVs · C AI · Q quit"
+        : "/ ask · A apps · T TVs · C AI · Enter OK · +/- volume · 0 mute · O on · X off · Q quit"
 
   return Box(
     {
       width: compact ? 42 : 72,
-      borderStyle: "rounded",
-      borderColor: "#1F1F23",
       paddingX: 2,
       paddingY: 1,
-      backgroundColor: "#111113",
+      backgroundColor: "#0C0C0F",
     },
     Text({ content, fg: "#A1A1AA" }),
   )
@@ -666,15 +763,12 @@ function buttonRow(items: ReturnType<typeof pillButton>[]) {
   return Box({ flexDirection: "row", gap: 1, alignItems: "center" }, ...items)
 }
 
-function pillButton(label: string, key: string, variant: "purple" | "dark", compact: boolean) {
+function pillButton(label: string, key: string, variant: "purple" | "quiet", compact: boolean) {
   const width = compact ? 7 : label.length > 4 ? 10 : 8
-  const bg = variant === "purple" ? "#6F1AB1" : "#1A1A1D"
-  const border = variant === "purple" ? "#7B2CBF" : "#2B2B30"
+  const bg = variant === "purple" ? "#7C3AED" : "#1A1A1F"
   return Box(
     {
       width,
-      borderStyle: "rounded",
-      borderColor: border,
       backgroundColor: bg,
       paddingX: 1,
       paddingY: compact ? 0 : 1,
@@ -689,9 +783,7 @@ function roundButton(label: string, key: string, compact: boolean) {
   return Box(
     {
       width,
-      borderStyle: "rounded",
-      borderColor: "#2B2B30",
-      backgroundColor: "#1A1A1D",
+      backgroundColor: "#1A1A1F",
       paddingX: 1,
       paddingY: compact ? 0 : 1,
       alignItems: "center",
@@ -704,17 +796,26 @@ function dpad(compact: boolean) {
   return Box(
     {
       width: compact ? 23 : 26,
-      borderStyle: "rounded",
-      borderColor: "#2B2B30",
       paddingX: 1,
       paddingY: compact ? 0 : 1,
       flexDirection: "column",
       alignItems: "center",
-      backgroundColor: "#151518",
+      backgroundColor: "#17171B",
     },
     Text({ content: "▲", fg: "#FFFFFF" }),
     Text({ content: "◀   OK   ▶", fg: "#FFFFFF" }),
     Text({ content: "▼", fg: "#FFFFFF" }),
+  )
+}
+
+function accentBar(compact: boolean) {
+  return Box(
+    {
+      width: compact ? 20 : 24,
+      height: 1,
+      backgroundColor: "#7C3AED",
+    },
+    Text({ content: "", fg: "#7C3AED" }),
   )
 }
 
