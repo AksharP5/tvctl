@@ -45,6 +45,7 @@ export async function runRemote(device: RokuDevice): Promise<void> {
   function draw(): void {
     const existing = renderer.root.getRenderable("tvctl-root")
     if (existing) renderer.root.remove("tvctl-root")
+    const compact = renderer.terminalWidth < 72 || renderer.terminalHeight < 36
 
     renderer.root.add(
       Box(
@@ -52,23 +53,23 @@ export async function runRemote(device: RokuDevice): Promise<void> {
           id: "tvctl-root",
           width: "100%",
           height: "100%",
-          padding: 2,
+          padding: compact ? 0 : 1,
           gap: 1,
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#160023",
+          backgroundColor: "#050505",
         },
-        header(device, state),
+        compact ? compactHeader(device, state) : header(device, state),
         Box(
           {
-            width: 42,
+            width: compact ? 32 : 42,
             flexDirection: "column",
             alignItems: "center",
           },
-          state.view === "apps" ? appDrawer(state) : remoteBody(state),
+          state.view === "apps" ? appDrawer(state, compact) : remoteBody(state, compact),
         ),
-        footer(state),
+        footer(state, compact),
       ),
     )
   }
@@ -253,11 +254,36 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       case "p":
         await sendKey("Play")
         return
+      case "[":
+        await sendKey("Rev")
+        return
+      case "]":
+        await sendKey("Fwd")
+        return
       case "r":
         await sendKey("InstantReplay")
         return
       case "o":
+        await sendKey("PowerOn")
+        return
+      case "x":
         await sendKey("PowerOff")
+        return
+      case "+":
+      case "=":
+        await sendKey("VolumeUp")
+        return
+      case "-":
+        await sendKey("VolumeDown")
+        return
+      case "0":
+        await sendKey("VolumeMute")
+        return
+      case "v":
+        await sendKey("VolumeMute")
+        return
+      case "?":
+        await sendKey("Info")
         return
       case "s":
         await sendKey("Search")
@@ -281,152 +307,180 @@ export async function runRemote(device: RokuDevice): Promise<void> {
 function header(device: RokuDevice, state: RemoteState) {
   return Box(
     {
-      width: 54,
+      width: 46,
       paddingX: 1,
       flexDirection: "column",
       alignItems: "center",
     },
-    Text({ content: device.name, fg: "#F5E9FF" }),
-    Text({ content: `${state.activeApp?.name ?? "unknown"}  -  ${state.status}`, fg: "#C9A7FF" }),
+    Text({ content: "tvctl", fg: "#6F1AB1" }),
+    Text({ content: `${device.name} · ${state.activeApp?.name ?? "unknown"}`, fg: "#A1A1AA" }),
+    Text({ content: state.status, fg: "#71717A" }),
   )
 }
 
-function remoteBody(state: RemoteState) {
+function compactHeader(device: RokuDevice, state: RemoteState) {
+  return Box(
+    { width: 36, flexDirection: "column", alignItems: "center" },
+    Text({ content: `${device.name}`, fg: "#A1A1AA" }),
+    Text({ content: `${state.activeApp?.name ?? "unknown"} · ${state.status}`, fg: "#71717A" }),
+  )
+}
+
+function remoteBody(state: RemoteState, compact: boolean) {
   return Box(
     {
-      width: 38,
-      height: 34,
+      width: compact ? 28 : 32,
+      height: compact ? 28 : 36,
       borderStyle: "rounded",
-      borderColor: "#8B3DFF",
-      paddingX: 3,
-      paddingY: 1,
-      gap: 1,
+      borderColor: "#222226",
+      paddingX: compact ? 1 : 2,
+      paddingY: compact ? 0 : 1,
+      gap: compact ? 0 : 1,
       flexDirection: "column",
       alignItems: "center",
-      backgroundColor: "#0A0710",
+      backgroundColor: "#111113",
     },
-    Text({ content: "ROKU", fg: "#A970FF" }),
-    spacer(),
-    buttonRow([button("POWER", "o", "#8B3DFF"), button("HOME", "m", "#8B3DFF")]),
-    buttonRow([button("BACK", "b", "#2C2238"), button("APPS", "a", "#5B1EA6")]),
-    spacer(),
-    dpad(),
-    spacer(),
-    buttonRow([button("SEARCH", "s", "#2C2238"), button("TYPE", "i", "#2C2238")]),
-    buttonRow([button("PLAY", "p", "#2C2238"), button("REPLAY", "r", "#2C2238")]),
-    typingPanel(state),
-    Text({ content: state.lastKey ? `Last: ${state.lastKey}` : "arrows / hjkl move", fg: "#9F8FB4" }),
+    Text({ content: "Roku", fg: "#7B2CBF" }),
+    buttonRow([pillButton("ON", "o", "purple", compact), pillButton("OFF", "x", "dark", compact)]),
+    buttonRow([pillButton("HOME", "m", "purple", compact), pillButton("BACK", "b", "dark", compact)]),
+    dpad(compact),
+    buttonRow([pillButton("SEARCH", "s", "dark", compact), pillButton("APPS", "a", "purple", compact)]),
+    buttonRow([roundButton("VOL+", "+", compact), roundButton("MUTE", "0", compact), roundButton("VOL-", "-", compact)]),
+    buttonRow([pillButton("REW", "[", "dark", compact), pillButton("PLAY", "p", "dark", compact), pillButton("FWD", "]", "dark", compact)]),
+    buttonRow([pillButton("INFO", "?", "dark", compact), pillButton("REPLAY", "r", "dark", compact)]),
+    typingPanel(state, compact),
+    Text({ content: state.lastKey ? `Last: ${state.lastKey}` : "arrows / hjkl move", fg: "#71717A" }),
   )
 }
 
-function appDrawer(state: RemoteState) {
+function appDrawer(state: RemoteState, compact: boolean) {
   const apps = filteredApps(state)
-  const visibleApps = apps.slice(0, 12)
-  const rows = visibleApps.map((app, index) => {
+  const visibleCount = compact ? 9 : 12
+  const start = Math.max(0, Math.min(state.selectedAppIndex - Math.floor(visibleCount / 2), Math.max(0, apps.length - visibleCount)))
+  const visibleApps = apps.slice(start, start + visibleCount)
+  const rows = visibleApps.map((app, offset) => {
+    const index = start + offset
     const selected = index === state.selectedAppIndex
-    const label = app.name.padEnd(32).slice(0, 32)
+    const labelWidth = compact ? 22 : 30
+    const label = app.name.padEnd(labelWidth).slice(0, labelWidth)
     return Text({
       content: `${selected ? ">" : " "} ${label}`,
-      fg: selected ? "#0B0F14" : "#D0D7DE",
-      bg: selected ? "#F2CC60" : undefined,
+      fg: selected ? "#FFFFFF" : "#D4D4D8",
+      bg: selected ? "#6F1AB1" : undefined,
     })
   })
 
   return Box(
     {
-      width: 42,
-      height: 34,
+      width: compact ? 32 : 42,
+      height: compact ? 30 : 34,
       borderStyle: "rounded",
-      borderColor: "#A970FF",
-      paddingX: 3,
-      paddingY: 2,
+      borderColor: "#1F1F23",
+      paddingX: compact ? 2 : 3,
+      paddingY: 1,
       gap: 1,
       flexDirection: "column",
-      backgroundColor: "#0A0710",
-      title: " Apps",
+      backgroundColor: "#111113",
+      title: " Apps ",
       titleAlignment: "center",
     },
-    Text({ content: "Type to filter - Enter launches - Esc closes", fg: "#C9A7FF" }),
-    Text({ content: state.appFilter ? `Search: ${state.appFilter}_` : "Search: _", fg: "#9F8FB4" }),
+    Text({ content: "Type to filter · Enter launches", fg: "#A1A1AA" }),
+    Text({ content: state.appFilter ? `Search: ${state.appFilter}_` : "Search: _", fg: "#71717A" }),
     ...rows,
-    Text({ content: `${apps.length} matching apps`, fg: "#8B949E" }),
+    Text({ content: `${apps.length ? start + 1 : 0}-${Math.min(start + visibleCount, apps.length)} of ${apps.length}`, fg: "#71717A" }),
   )
 }
 
-function typingPanel(state: RemoteState) {
+function typingPanel(state: RemoteState, compact: boolean) {
   const text = state.typing ? `Type: ${state.typeBuffer}_` : "Press i to type on TV"
   return Box(
     {
-      width: 28,
+      width: compact ? 24 : 28,
       borderStyle: "rounded",
-      borderColor: state.typing ? "#A970FF" : "#2C2238",
+      borderColor: state.typing ? "#6F1AB1" : "#27272A",
       paddingX: 1,
-      paddingY: 1,
-      marginTop: 1,
-      backgroundColor: "#120B1C",
+      paddingY: compact ? 0 : 1,
+      backgroundColor: "#18181B",
     },
-    Text({ content: text, fg: state.typing ? "#F5E9FF" : "#9F8FB4" }),
+    Text({ content: text, fg: state.typing ? "#FFFFFF" : "#71717A" }),
   )
 }
 
-function footer(state: RemoteState) {
+function footer(state: RemoteState, compact: boolean) {
   const content =
     state.view === "apps"
       ? "Apps: type to filter · Enter launch · Esc close"
-      : "arrows move · enter OK · A apps · I type · Q quit"
+      : compact
+        ? "Enter OK · A apps · +/- volume · Q quit"
+        : "Enter OK · A apps · I type · +/- volume · 0 mute · O on · X off · Q quit"
 
   return Box(
     {
-      width: 54,
+      width: compact ? 42 : 72,
       borderStyle: "rounded",
-      borderColor: "#3B165F",
+      borderColor: "#1F1F23",
       paddingX: 2,
       paddingY: 1,
-      backgroundColor: "#0A0710",
+      backgroundColor: "#111113",
     },
-    Text({ content, fg: "#C9A7FF" }),
+    Text({ content, fg: "#A1A1AA" }),
   )
 }
 
-function buttonRow(items: ReturnType<typeof button>[]) {
-  return Box({ flexDirection: "row", gap: 1 }, ...items)
+function buttonRow(items: ReturnType<typeof pillButton>[]) {
+  return Box({ flexDirection: "row", gap: 1, alignItems: "center" }, ...items)
 }
 
-function button(label: string, key: string, color: string) {
+function pillButton(label: string, key: string, variant: "purple" | "dark", compact: boolean) {
+  const width = compact ? 7 : label.length > 4 ? 10 : 8
+  const bg = variant === "purple" ? "#6F1AB1" : "#1A1A1D"
+  const border = variant === "purple" ? "#7B2CBF" : "#2B2B30"
   return Box(
     {
-      width: 13,
+      width,
       borderStyle: "rounded",
-      borderColor: color,
-      backgroundColor: color === "#2C2238" ? "#120B1C" : color,
+      borderColor: border,
+      backgroundColor: bg,
       paddingX: 1,
-      paddingY: 1,
+      paddingY: compact ? 0 : 1,
       alignItems: "center",
     },
-    Text({ content: `${label} ${key}`, fg: color === "#2C2238" ? "#F5E9FF" : "#FFFFFF" }),
+    Text({ content: compact ? label : `${label} ${key}`, fg: "#FFFFFF" }),
   )
 }
 
-function dpad() {
+function roundButton(label: string, key: string, compact: boolean) {
+  const width = compact ? 7 : 8
   return Box(
     {
-      width: 28,
+      width,
       borderStyle: "rounded",
-      borderColor: "#3B165F",
-      paddingX: 2,
-      paddingY: 1,
+      borderColor: "#2B2B30",
+      backgroundColor: "#1A1A1D",
+      paddingX: 1,
+      paddingY: compact ? 0 : 1,
+      alignItems: "center",
+    },
+    Text({ content: compact ? label : `${label} ${key}`, fg: "#FFFFFF" }),
+  )
+}
+
+function dpad(compact: boolean) {
+  return Box(
+    {
+      width: compact ? 23 : 26,
+      borderStyle: "rounded",
+      borderColor: "#2B2B30",
+      paddingX: 1,
+      paddingY: compact ? 0 : 1,
       flexDirection: "column",
       alignItems: "center",
-      backgroundColor: "#120B1C",
+      backgroundColor: "#151518",
     },
-    Text({ content: "      ▲", fg: "#F5E9FF" }),
-    Text({ content: "  ◀   OK   ▶", fg: "#F5E9FF" }),
-    Text({ content: "      ▼", fg: "#F5E9FF" }),
+    Text({ content: "▲", fg: "#FFFFFF" }),
+    Text({ content: "◀   OK   ▶", fg: "#FFFFFF" }),
+    Text({ content: "▼", fg: "#FFFFFF" }),
   )
-}
-
-function spacer() {
-  return Text({ content: "", fg: "#8B949E" })
 }
 
 function filteredApps(state: RemoteState): RokuApp[] {
