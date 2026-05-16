@@ -39,7 +39,5 @@ jobs:
       - run: bun run typecheck
         if: ${{ steps.release.outputs.release_created == 'true' }}
 
-      - run: npm publish --provenance --access public
+      - run: npm publish --access public
         if: ${{ steps.release.outputs.release_created == 'true' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
