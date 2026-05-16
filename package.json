@@ -5,7 +5,7 @@
   "module": "src/cli.ts",
   "type": "module",
   "bin": {
-    "tvctl": "./bin/tvctl"
+    "tvctl": "bin/tvctl"
   },
   "repository": {
     "type": "git",
