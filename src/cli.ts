@@ -1,17 +1,22 @@
 #!/usr/bin/env bun
 import { cac } from "cac"
+import { deterministicPlan, executePlan, planWithOpenCode } from "./ai"
 import { getConfigPath, setDefaultDevice } from "./config"
 import { formatDevice, resolveDevice } from "./device"
+import { findApp, launchApp, searchInApp } from "./roku/apps"
 import { RokuClient } from "./roku/client"
 import { discoverRokus } from "./roku/discover"
 import { runRemote } from "./tui/remote"
-import type { RokuApp, RokuKey } from "./types"
+import type { RokuKey } from "./types"
 
 const cli = cac("tvctl")
+const knownCommands = new Set(["remote", "discover", "key", "type", "apps", "launch", "active", "ask", "help"])
 
 interface HostOptions {
   host?: string
 }
+
+await maybeRunAppShortcut()
 
 cli
   .command("", "Open the Roku terminal remote")
@@ -42,6 +47,15 @@ cli.command("discover", "Find Roku devices on the local network").action(async (
   }
   console.log(`\nDefault device saved to ${getConfigPath()}`)
 })
+
+cli
+  .command("ask [...prompt]", "Ask tvctl to control the TV in plain English")
+  .option("--host <host>", "Roku host or IP address")
+  .action(async (prompt: string[], options: HostOptions) => {
+    const request = prompt.join(" ").trim()
+    if (!request) throw new Error('Usage: tvctl ask "open YouTube and search Drake album"')
+    await runAiRequest(request, options.host)
+  })
 
 cli
   .command("key <key>", "Send a Roku keypress")
@@ -79,13 +93,7 @@ cli
     const device = await resolveDevice(options.host)
     const client = new RokuClient(device.host)
     const apps = await client.apps()
-    const app = apps.find((candidate) => candidate.id === query) ?? fuzzyFindApp(apps, query)
-
-    if (!app) {
-      throw new Error(`No Roku app matched "${query}". Run \`tvctl apps\` to see installed apps.`)
-    }
-
-    await client.launch(app.id)
+    const app = await launchApp(client, apps, query)
     console.log(`Launched ${app.name} on ${device.name}`)
   })
 
@@ -108,11 +116,54 @@ try {
   process.exit(1)
 }
 
-function fuzzyFindApp(apps: RokuApp[], query: string): RokuApp | undefined {
-  const normalized = normalize(query)
-  return apps.find((app) => normalize(app.name) === normalized) ?? apps.find((app) => normalize(app.name).includes(normalized))
+async function maybeRunAppShortcut(): Promise<void> {
+  const args = process.argv.slice(2)
+  const firstArg = args[0]
+  if (!firstArg || firstArg.startsWith("-") || knownCommands.has(firstArg)) return
+
+  const hostFlagIndex = args.indexOf("--host")
+  const host = hostFlagIndex >= 0 ? args[hostFlagIndex + 1] : undefined
+  const cleanArgs = hostFlagIndex >= 0 ? args.toSpliced(hostFlagIndex, 2) : args
+  const [appQuery, action, ...terms] = cleanArgs
+  if (!appQuery) return
+
+  const device = await resolveDevice(host)
+  const client = new RokuClient(device.host)
+  const apps = await client.apps()
+  const app = findApp(apps, appQuery)
+  if (!app) {
+    await runAiRequest(cleanArgs.join(" "), host)
+    process.exit(0)
+  }
+
+  if (action === "search") {
+    const query = terms.join(" ").trim()
+    if (!query) throw new Error(`Usage: tvctl ${appQuery} search <query>`)
+    await searchInApp(client, apps, appQuery, query)
+    console.log(`Searching ${app.name} for "${query}" on ${device.name}`)
+    process.exit(0)
+  }
+
+  await client.launch(app.id)
+  console.log(`Launched ${app.name} on ${device.name}`)
+  process.exit(0)
 }
 
-function normalize(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
+async function runAiRequest(request: string, host?: string): Promise<void> {
+  const device = await resolveDevice(host)
+  const client = new RokuClient(device.host)
+  const apps = await client.apps()
+  let plan = deterministicPlan(request, apps)
+  if (!plan) {
+    try {
+      plan = await planWithOpenCode(request, apps)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Could not plan that TV request with AI: ${message}`)
+    }
+  }
+
+  console.log(plan.summary)
+  await executePlan(client, apps, plan)
+  console.log(`Done on ${device.name}`)
 }
