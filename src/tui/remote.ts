@@ -591,7 +591,7 @@ function remoteBody(state: RemoteState, compact: boolean) {
   return Box(
     {
       width: compact ? 30 : 38,
-      height: compact ? 29 : 39,
+      height: compact ? 32 : 45,
       paddingX: compact ? 2 : 3,
       paddingY: compact ? 0 : 1,
       gap: compact ? 0 : 1,
@@ -602,13 +602,19 @@ function remoteBody(state: RemoteState, compact: boolean) {
     accentBar(compact),
     Text({ content: "ROKU", fg: "#A855F7" }),
     buttonRow([pillButton("ON", "o", "quiet", compact), pillButton("OFF", "x", "quiet", compact)]),
+    sectionGap(compact),
     buttonRow([pillButton("HOME", "m", "purple", compact), pillButton("BACK", "b", "quiet", compact)]),
+    sectionGap(compact),
     dpad(compact),
+    sectionGap(compact),
     buttonRow([pillButton("ASK", "/", "purple", compact), pillButton("APPS", "a", "purple", compact)]),
     buttonRow([pillButton("TVS", "t", "quiet", compact), pillButton("AI", "c", "quiet", compact)]),
+    sectionGap(compact),
     buttonRow([roundButton("VOL+", "+", compact), roundButton("MUTE", "0", compact), roundButton("VOL-", "-", compact)]),
+    sectionGap(compact),
     buttonRow([pillButton("REW", "[", "quiet", compact), pillButton("PLAY", "p", "quiet", compact), pillButton("FWD", "]", "quiet", compact)]),
     buttonRow([pillButton("SEARCH", "s", "quiet", compact), pillButton("INFO", "?", "quiet", compact), pillButton("REPLAY", "r", "quiet", compact)]),
+    sectionGap(compact),
     typingPanel(state, compact),
     Text({ content: truncate(`AI ${provider.label} · ${state.aiModel}`, compact ? 24 : 28), fg: "#8B8B93" }),
     Text({ content: state.lastKey ? `Last ${state.lastKey}` : "arrows / hjkl move", fg: "#8B8B93" }),
@@ -809,7 +815,7 @@ function footer(state: RemoteState, compact: boolean) {
 }
 
 function buttonRow(items: ReturnType<typeof pillButton>[]) {
-  return Box({ flexDirection: "row", gap: 1, alignItems: "center" }, ...items)
+  return Box({ flexDirection: "row", gap: 2, alignItems: "center" }, ...items)
 }
 
 function pillButton(label: string, key: string, variant: "purple" | "quiet", compact: boolean) {
@@ -858,7 +864,7 @@ function dpad(compact: boolean) {
 }
 
 function dpadRow(items: ReturnType<typeof dpadButton>[], compact: boolean) {
-  return Box({ flexDirection: "row", gap: compact ? 0 : 1, alignItems: "center" }, ...items)
+  return Box({ flexDirection: "row", gap: compact ? 1 : 2, alignItems: "center" }, ...items)
 }
 
 function dpadButton(label: string, compact: boolean, primary = false) {
@@ -886,6 +892,10 @@ function accentBar(compact: boolean) {
     },
     Text({ content: "", fg: "#7C3AED" }),
   )
+}
+
+function sectionGap(compact: boolean) {
+  return compact ? Text({ content: "" }) : Box({ height: 1 }, Text({ content: "" }))
 }
 
 function filteredApps(state: RemoteState): RokuApp[] {
