@@ -7,6 +7,9 @@ export interface ProviderOption {
   id: TvctlAiProvider
   label: string
   description: string
+  command: string
+  checkArgs: string[]
+  setupHint: string
   suggestions: string[]
 }
 
@@ -15,18 +18,27 @@ export const providers: ProviderOption[] = [
     id: "opencode",
     label: "OpenCode",
     description: "Recommended default. Uses OpenCode as the provider/model bridge.",
+    command: "opencode",
+    checkArgs: ["auth", "list"],
+    setupHint: "Install OpenCode, then run `opencode auth login`.",
     suggestions: ["opencode/big-pickle", "openai/gpt-5.1-codex-mini", "openai/gpt-5.4"],
   },
   {
     id: "codex",
     label: "Codex",
     description: "Uses Codex CLI subscriptions/auth with `codex exec`.",
+    command: "codex",
+    checkArgs: ["login", "status"],
+    setupHint: "Install Codex CLI, then run `codex login`.",
     suggestions: ["gpt-5.1-codex-mini", "gpt-5.4", "gpt-5.2"],
   },
   {
     id: "claude",
     label: "Claude",
     description: "Uses Claude Code CLI subscriptions/auth with `claude -p`.",
+    command: "claude",
+    checkArgs: ["--version"],
+    setupHint: "Install Claude Code, then run `claude login`.",
     suggestions: ["claude-sonnet-4-5", "claude-haiku-4-5"],
   },
 ]

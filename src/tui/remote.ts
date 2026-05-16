@@ -1,4 +1,6 @@
 import { Box, Text, createCliRenderer, type KeyEvent } from "@opentui/core"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { defaultAiConfig, deterministicPlan, executePlan, planWithAi } from "../ai"
 import { getAiConfig, setAiConfig, setDefaultDevice } from "../config"
 import { launchApp } from "../roku/apps"
@@ -6,6 +8,8 @@ import { RokuClient } from "../roku/client"
 import { discoverRokus } from "../roku/discover"
 import type { RokuApp, RokuDevice, RokuKey } from "../types"
 import { providers } from "./model"
+
+const execFileAsync = promisify(execFile)
 
 type ViewMode = "remote" | "apps" | "settings" | "ask" | "tvs"
 
@@ -23,6 +27,8 @@ interface RemoteState {
   providerIndex: number
   aiModel: string
   editingModel: boolean
+  providerStatus: string
+  providerStatusOk: boolean
   askBuffer: string
   askBusy: boolean
   lastKey?: string
@@ -50,6 +56,8 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     providerIndex,
     aiModel: aiConfig?.model ?? defaultAiConfig.model ?? providers[providerIndex]?.suggestions[0] ?? "",
     editingModel: false,
+    providerStatus: "Provider not checked",
+    providerStatusOk: false,
     askBuffer: "",
     askBusy: false,
   }
@@ -130,6 +138,29 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       state.status = `${state.devices.length} Roku TV${state.devices.length === 1 ? "" : "s"} found`
     } catch (error) {
       state.status = error instanceof Error ? error.message : "TV discovery failed"
+    }
+    draw()
+  }
+
+  async function refreshProviderStatus(): Promise<void> {
+    const provider = providers[state.providerIndex] ?? providers[0]!
+    state.providerStatus = `Checking ${provider.label}`
+    state.providerStatusOk = false
+    draw()
+    try {
+      await execFileAsync(provider.command, provider.checkArgs, { timeout: 5000, maxBuffer: 128 * 1024 })
+      state.providerStatus = `${provider.label} CLI ready`
+      state.providerStatusOk = true
+    } catch (error) {
+      const anyError = error as { code?: string; killed?: boolean; signal?: string }
+      if (anyError.code === "ENOENT") {
+        state.providerStatus = `${provider.label} CLI not installed`
+      } else if (anyError.killed || anyError.signal === "SIGTERM") {
+        state.providerStatus = `${provider.label} check timed out`
+      } else {
+        state.providerStatus = `${provider.label} needs login/setup`
+      }
+      state.providerStatusOk = false
     }
     draw()
   }
@@ -246,6 +277,7 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       state.askBuffer = ""
       state.status = "Ask tvctl"
       draw()
+      void refreshProviderStatus()
       return
     }
 
@@ -254,6 +286,7 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       state.editingModel = false
       state.status = "AI settings"
       draw()
+      void refreshProviderStatus()
       return
     }
 
@@ -381,6 +414,7 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       state.status = `Saved ${provider.label}${model ? ` / ${model}` : ""}`
       state.editingModel = false
       draw()
+      void refreshProviderStatus()
       return
     }
 
@@ -393,16 +427,22 @@ export async function runRemote(device: RokuDevice): Promise<void> {
     if (state.editingModel) {
       if (key.ctrl && key.name === "u") {
         state.aiModel = ""
+        state.providerStatus = "Save to check provider"
+        state.providerStatusOk = false
         draw()
         return
       }
       if (key.name === "backspace") {
         state.aiModel = state.aiModel.slice(0, -1)
+        state.providerStatus = "Save to check provider"
+        state.providerStatusOk = false
         draw()
         return
       }
       if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
         state.aiModel += key.sequence
+        state.providerStatus = "Save to check provider"
+        state.providerStatusOk = false
         draw()
       }
       return
@@ -412,12 +452,14 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       state.providerIndex = Math.max(0, state.providerIndex - 1)
       state.aiModel = providers[state.providerIndex]?.suggestions[0] ?? state.aiModel
       draw()
+      void refreshProviderStatus()
       return
     }
     if (key.name === "down" || key.name === "j") {
       state.providerIndex = Math.min(providers.length - 1, state.providerIndex + 1)
       state.aiModel = providers[state.providerIndex]?.suggestions[0] ?? state.aiModel
       draw()
+      void refreshProviderStatus()
     }
   }
 
@@ -545,10 +587,11 @@ function compactHeader(device: RokuDevice, state: RemoteState) {
 }
 
 function remoteBody(state: RemoteState, compact: boolean) {
+  const provider = providers[state.providerIndex] ?? providers[0]!
   return Box(
     {
-      width: compact ? 30 : 34,
-      height: compact ? 29 : 37,
+      width: compact ? 30 : 38,
+      height: compact ? 29 : 39,
       paddingX: compact ? 2 : 3,
       paddingY: compact ? 0 : 1,
       gap: compact ? 0 : 1,
@@ -567,6 +610,7 @@ function remoteBody(state: RemoteState, compact: boolean) {
     buttonRow([pillButton("REW", "[", "quiet", compact), pillButton("PLAY", "p", "quiet", compact), pillButton("FWD", "]", "quiet", compact)]),
     buttonRow([pillButton("SEARCH", "s", "quiet", compact), pillButton("INFO", "?", "quiet", compact), pillButton("REPLAY", "r", "quiet", compact)]),
     typingPanel(state, compact),
+    Text({ content: truncate(`AI ${provider.label} · ${state.aiModel}`, compact ? 24 : 28), fg: "#8B8B93" }),
     Text({ content: state.lastKey ? `Last ${state.lastKey}` : "arrows / hjkl move", fg: "#8B8B93" }),
   )
 }
@@ -620,6 +664,8 @@ function settingsPanel(state: RemoteState, compact: boolean) {
     },
     accentBar(compact),
     Text({ content: "AI settings", fg: "#F4F4F5" }),
+    Text({ content: truncate(`Using ${provider.label} · ${state.aiModel}`, compact ? 26 : 34), fg: "#C084FC" }),
+    Text({ content: truncate(state.providerStatus, compact ? 26 : 34), fg: state.providerStatusOk ? "#86EFAC" : "#FCA5A5" }),
     Text({ content: "Provider", fg: "#A1A1AA" }),
     ...providers.map((item, index) =>
       Text({
@@ -642,12 +688,14 @@ function settingsPanel(state: RemoteState, compact: boolean) {
       }),
     ),
     Text({ content: truncate(provider.description, compact ? 26 : 34), fg: "#8B8B93" }),
-    Text({ content: truncate(`Try: ${provider.suggestions.join(", ")}`, compact ? 26 : 34), fg: "#8B8B93" }),
+    Text({ content: truncate(provider.setupHint, compact ? 26 : 34), fg: "#8B8B93" }),
+    Text({ content: truncate(`Try ${provider.suggestions.join(", ")}`, compact ? 26 : 34), fg: "#8B8B93" }),
     Text({ content: "Tab edit · Enter save · Esc remote", fg: "#A1A1AA" }),
   )
 }
 
 function askPanel(state: RemoteState, compact: boolean) {
+  const provider = providers[state.providerIndex] ?? providers[0]!
   return Box(
     {
       width: compact ? 32 : 42,
@@ -660,7 +708,8 @@ function askPanel(state: RemoteState, compact: boolean) {
     },
     accentBar(compact),
     Text({ content: "Ask tvctl", fg: "#F4F4F5" }),
-    Text({ content: "Type a TV request", fg: "#A1A1AA" }),
+    Text({ content: truncate(`Using ${provider.label} · ${state.aiModel}`, compact ? 26 : 34), fg: "#C084FC" }),
+    Text({ content: truncate(state.providerStatus, compact ? 26 : 34), fg: state.providerStatusOk ? "#86EFAC" : "#FCA5A5" }),
     Box(
       {
         width: compact ? 26 : 34,
@@ -764,8 +813,8 @@ function buttonRow(items: ReturnType<typeof pillButton>[]) {
 }
 
 function pillButton(label: string, key: string, variant: "purple" | "quiet", compact: boolean) {
-  const width = compact ? 7 : label.length > 4 ? 10 : 8
-  const bg = variant === "purple" ? "#7C3AED" : "#1A1A1F"
+  const width = compact ? 8 : label.length > 4 ? 11 : 9
+  const bg = variant === "purple" ? "#7C3AED" : "#18181D"
   return Box(
     {
       width,
@@ -779,11 +828,11 @@ function pillButton(label: string, key: string, variant: "purple" | "quiet", com
 }
 
 function roundButton(label: string, key: string, compact: boolean) {
-  const width = compact ? 7 : 8
+  const width = compact ? 8 : 9
   return Box(
     {
       width,
-      backgroundColor: "#1A1A1F",
+      backgroundColor: "#18181D",
       paddingX: 1,
       paddingY: compact ? 0 : 1,
       alignItems: "center",
@@ -795,17 +844,37 @@ function roundButton(label: string, key: string, compact: boolean) {
 function dpad(compact: boolean) {
   return Box(
     {
-      width: compact ? 23 : 26,
+      width: compact ? 24 : 28,
       paddingX: 1,
       paddingY: compact ? 0 : 1,
       flexDirection: "column",
       alignItems: "center",
       backgroundColor: "#17171B",
     },
-    Text({ content: "▲", fg: "#FFFFFF" }),
-    Text({ content: "◀   OK   ▶", fg: "#FFFFFF" }),
-    Text({ content: "▼", fg: "#FFFFFF" }),
+    dpadRow([dpadSpacer(compact), dpadButton("▲", compact), dpadSpacer(compact)], compact),
+    dpadRow([dpadButton("◀", compact), dpadButton("OK", compact, true), dpadButton("▶", compact)], compact),
+    dpadRow([dpadSpacer(compact), dpadButton("▼", compact), dpadSpacer(compact)], compact),
   )
+}
+
+function dpadRow(items: ReturnType<typeof dpadButton>[], compact: boolean) {
+  return Box({ flexDirection: "row", gap: compact ? 0 : 1, alignItems: "center" }, ...items)
+}
+
+function dpadButton(label: string, compact: boolean, primary = false) {
+  return Box(
+    {
+      width: compact ? 6 : 7,
+      paddingY: compact ? 0 : 1,
+      alignItems: "center",
+      backgroundColor: primary ? "#25252B" : "#1F1F25",
+    },
+    Text({ content: label, fg: primary ? "#FFFFFF" : "#E4E4E7" }),
+  )
+}
+
+function dpadSpacer(compact: boolean) {
+  return Box({ width: compact ? 6 : 7 }, Text({ content: "" }))
 }
 
 function accentBar(compact: boolean) {
