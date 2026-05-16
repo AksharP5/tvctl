@@ -29,6 +29,7 @@ tvctl discover        # Find Roku TVs on your local network
 tvctl ask "open YouTube and search Drake album"
 tvctl youtube          # Launch YouTube without opening the TUI
 tvctl netflix          # Launch Netflix without opening the TUI
+tvctl stitch           # Works if Stitch is installed on your Roku
 tvctl apps            # List installed Roku apps
 tvctl launch youtube  # Launch an app by id or fuzzy name
 tvctl active          # Show the active app
@@ -67,6 +68,19 @@ Provider support:
 - `claude`: uses `claude -p --model <model>`.
 
 Direct commands such as `tvctl netflix`, `tvctl youtube search drake album`, and `tvctl go home` do not require any AI provider.
+
+## App Shortcuts
+
+App shortcuts are dynamic. `tvctl` queries the apps installed on your Roku and fuzzy-matches the first argument:
+
+```bash
+tvctl youtube
+tvctl netflix
+tvctl stitch
+tvctl "prime video"
+```
+
+There is no hardcoded list of app commands. If an app is not installed, `tvctl <app>` fails with a clear message and suggests `tvctl apps`. If the request looks like a broader instruction, such as `tvctl open the music app and search future`, `tvctl` can pass it to the AI planner.
 
 Pass `--host <ip>` to any device command to skip discovery/config:
 

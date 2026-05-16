@@ -187,7 +187,12 @@ async function maybeRunAppShortcut(): Promise<void> {
   const apps = await client.apps()
   const app = findApp(apps, appQuery)
   if (!app) {
-    await runAiRequest(cleanArgs.join(" "), { host })
+    const request = cleanArgs.join(" ")
+    if (looksLikeAppOnlyRequest(cleanArgs)) {
+      throw new Error(`No installed Roku app matched "${request}". Run \`tvctl apps\` to see available app shortcuts.`)
+    }
+
+    await runAiRequest(request, { host })
     process.exit(0)
   }
 
@@ -202,6 +207,10 @@ async function maybeRunAppShortcut(): Promise<void> {
   await client.launch(app.id)
   console.log(`Launched ${app.name} on ${device.name}`)
   process.exit(0)
+}
+
+function looksLikeAppOnlyRequest(args: string[]): boolean {
+  return args.length <= 3 && !args.some((arg) => /^(open|launch|start|switch|change|go|search|find|play|pause|mute|volume|turn)$/i.test(arg))
 }
 
 async function runAiRequest(request: string, options: AskOptions): Promise<void> {
