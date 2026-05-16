@@ -6,26 +6,36 @@ A terminal remote and CLI for Roku TVs.
 
 ## Install
 
-```bash
-bun install
-```
-
-Local development:
+Run without installing:
 
 ```bash
-bun link
-tvctl --help
-```
-
-After publishing to npm, users can install or run it with:
-
-```bash
-bun add -g tvctl
 bunx tvctl
 npx tvctl
 ```
 
-The npm package currently requires Bun because the package bin runs TypeScript through Bun. `npx tvctl` will still require Bun to be installed on the user's machine.
+Install globally:
+
+```bash
+bun add -g tvctl
+npm install -g tvctl
+```
+
+`tvctl` is published on npm. The npm package currently requires Bun because the CLI entrypoint runs with `#!/usr/bin/env bun`; install Bun first if you want to use `npx`, `npm install -g`, or `bunx`.
+
+First setup:
+
+```bash
+tvctl discover
+tvctl
+```
+
+Local development from this repo:
+
+```bash
+bun install
+bun src/cli.ts discover
+bun src/cli.ts
+```
 
 ## Usage
 
@@ -67,6 +77,14 @@ Common requests are planned locally and do not require AI. Ambiguous requests ca
 
 The suggested default is OpenCode with `opencode/big-pickle`, because it has been consistently free. It can be slower than using the physical remote for tiny tasks, so users with Codex, Claude, or paid OpenCode-backed models should pick a faster model.
 
+Install and log in to the provider CLI you want to use:
+
+```bash
+opencode auth login
+codex login
+claude login
+```
+
 Configure the planner:
 
 ```bash
@@ -81,6 +99,8 @@ tvctl ask --model gpt-5.4 "open spotify and search future"
 You can also configure the planner from the main TUI. Run `tvctl`, press `c`, choose the provider, edit the model, and press `Enter` to save.
 
 The main TUI also has an agent prompt. Press `/`, type a request like `open prime` or `search youtube for drake album`, then press `Enter`.
+
+The TUI shows the active provider/model and checks whether the selected provider CLI appears ready. If it says the provider needs login or setup, run the matching login command above.
 
 Provider support:
 
@@ -147,6 +167,13 @@ Roku devices expose the External Control Protocol on the local network. `tvctl` 
 - `/query/active-app`
 - `/keypress/{key}`
 - `/launch/{appId}`
+
+Power behavior:
+
+- `PowerOff` works when the Roku is awake and reachable on the network.
+- `PowerOn` only works if the Roku TV can still receive network control commands while the screen is off. On many Roku TVs, that means enabling Fast TV Start or equivalent standby network behavior.
+- If the TV is fully powered down, unplugged, in deep sleep, or no longer reachable at port `8060`, `tvctl` cannot wake it over ECP.
+- Roku streaming players are different from Roku TVs: many stay powered and network-connected, while the TV itself is controlled through HDMI-CEC/TV power settings.
 
 If discovery does not find your Roku, check the TV setting:
 
