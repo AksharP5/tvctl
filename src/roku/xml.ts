@@ -28,10 +28,14 @@ export function parseApps(xml: string): RokuApp[] {
 
 export function parseActiveApp(xml: string): RokuApp | undefined {
   const parsed = parser.parse(xml) as {
-    "active-app"?: { app?: Record<string, unknown> }
+    "active-app"?: { app?: Record<string, unknown> | string }
   }
 
   const app = parsed["active-app"]?.app
+  if (typeof app === "string") {
+    return { id: "", name: app }
+  }
+
   if (!app?.id || !app.name) return undefined
 
   return {
