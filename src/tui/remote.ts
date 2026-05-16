@@ -3,13 +3,13 @@ import { launchApp } from "../roku/apps"
 import { RokuClient } from "../roku/client"
 import type { RokuApp, RokuDevice, RokuKey } from "../types"
 
-type FocusPane = "remote" | "apps"
+type ViewMode = "remote" | "apps"
 
 interface RemoteState {
   activeApp?: RokuApp
   apps: RokuApp[]
   status: string
-  focus: FocusPane
+  view: ViewMode
   typing: boolean
   typeBuffer: string
   appFilter: string
@@ -23,7 +23,7 @@ export async function runRemote(device: RokuDevice): Promise<void> {
   const state: RemoteState = {
     apps: [],
     status: "Connecting",
-    focus: "remote",
+    view: "remote",
     typing: false,
     typeBuffer: "",
     appFilter: "",
@@ -53,29 +53,21 @@ export async function runRemote(device: RokuDevice): Promise<void> {
           width: "100%",
           height: "100%",
           padding: 1,
-          gap: 1,
           flexDirection: "column",
-          backgroundColor: "#0B0F14",
+          alignItems: "center",
+          backgroundColor: "#080B10",
         },
         header(device, state),
         Box(
           {
+            width: 48,
             flexGrow: 1,
-            gap: 1,
-            flexDirection: "row",
+            flexDirection: "column",
+            justifyContent: "center",
           },
-          Box(
-            {
-              width: "50%",
-              flexDirection: "column",
-              gap: 1,
-            },
-            remotePad(state),
-            typingPanel(state),
-          ),
-          appPanel(state),
+          state.view === "apps" ? appDrawer(state) : remoteBody(state),
         ),
-        helpPanel(),
+        footer(state),
       ),
     )
   }
@@ -103,6 +95,9 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       await launchApp(client, state.apps, app.id)
       state.status = `Launched ${app.name}`
       state.activeApp = app
+      state.view = "remote"
+      state.appFilter = ""
+      state.selectedAppIndex = 0
     } catch (error) {
       state.status = error instanceof Error ? error.message : "Launch failed"
     }
@@ -140,19 +135,27 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       return
     }
 
-    if (key.name === "escape" || key.name === "q") {
+    if (key.name === "q" || key.name === "escape") {
+      if (state.view === "apps") {
+        state.view = "remote"
+        state.appFilter = ""
+        state.selectedAppIndex = 0
+        state.status = "Remote"
+        draw()
+        return
+      }
       renderer.destroy()
       return
     }
 
-    if (key.name === "tab") {
-      state.focus = state.focus === "remote" ? "apps" : "remote"
-      state.status = state.focus === "apps" ? "App launcher" : "Remote"
+    if (key.name === "a" || key.name === "tab") {
+      state.view = state.view === "apps" ? "remote" : "apps"
+      state.status = state.view === "apps" ? "Choose an app" : "Remote"
       draw()
       return
     }
 
-    if (state.focus === "apps") {
+    if (state.view === "apps") {
       await handleAppKey(key)
       return
     }
@@ -274,52 +277,55 @@ export async function runRemote(device: RokuDevice): Promise<void> {
 function header(device: RokuDevice, state: RemoteState) {
   return Box(
     {
+      width: "100%",
       borderStyle: "rounded",
-      borderColor: "#2F81F7",
-      padding: 1,
+      borderColor: "#1F6FEB",
+      paddingX: 2,
+      paddingY: 1,
       flexDirection: "row",
       justifyContent: "space-between",
+      backgroundColor: "#0D1117",
     },
     Text({ content: `tvctl  ${device.name}`, fg: "#F0F6FC" }),
-    Text({ content: `Active: ${state.activeApp?.name ?? "unknown"}  |  ${state.status}`, fg: "#A5D6FF" }),
+    Text({ content: `${state.activeApp?.name ?? "unknown"}  ·  ${state.status}`, fg: "#A5D6FF" }),
   )
 }
 
-function remotePad(state: RemoteState) {
-  const focused = state.focus === "remote"
-  const borderColor = focused ? "#7EE787" : "#30363D"
-  const active = state.lastKey ? `Last key: ${state.lastKey}` : "Arrow keys or hjkl"
-
+function remoteBody(state: RemoteState) {
   return Box(
     {
+      width: 48,
       borderStyle: "rounded",
-      borderColor,
-      padding: 1,
-      flexDirection: "column",
+      borderColor: "#30363D",
+      paddingX: 4,
+      paddingY: 2,
       gap: 1,
-      flexGrow: 1,
-      title: focused ? " Remote " : " Remote",
+      flexDirection: "column",
+      alignItems: "center",
+      backgroundColor: "#101820",
+      title: " Remote ",
+      titleAlignment: "center",
     },
-    Text({ content: "             Up", fg: "#7EE787" }),
-    Text({ content: "       Left   OK   Right", fg: "#7EE787" }),
-    Text({ content: "            Down", fg: "#7EE787" }),
-    Text({ content: "", fg: "#8B949E" }),
-    Text({ content: "Home m     Back b     Search s", fg: "#F0F6FC" }),
-    Text({ content: "Play p     Replay r   Type i", fg: "#F0F6FC" }),
-    Text({ content: active, fg: "#8B949E" }),
+    buttonRow([button("Home", "m", "#2F81F7"), button("Back", "b", "#8B949E"), button("Apps", "a", "#F2CC60")]),
+    spacer(),
+    Text({ content: "          ▲", fg: "#7EE787" }),
+    Text({ content: "      ◀  OK  ▶", fg: "#7EE787" }),
+    Text({ content: "          ▼", fg: "#7EE787" }),
+    spacer(),
+    buttonRow([button("Search", "s", "#D2A8FF"), button("Play", "p", "#7EE787"), button("Replay", "r", "#FFA657")]),
+    typingPanel(state),
+    Text({ content: state.lastKey ? `Last: ${state.lastKey}` : "Use arrow keys or hjkl", fg: "#8B949E" }),
   )
 }
 
-function appPanel(state: RemoteState) {
+function appDrawer(state: RemoteState) {
   const apps = filteredApps(state)
-  const visibleApps = apps.slice(0, 14)
-  const focused = state.focus === "apps"
+  const visibleApps = apps.slice(0, 12)
   const rows = visibleApps.map((app, index) => {
     const selected = index === state.selectedAppIndex
-    const marker = selected ? ">" : " "
-    const id = app.type === "tvin" ? "input" : app.id
+    const label = app.name.padEnd(32).slice(0, 32)
     return Text({
-      content: `${marker} ${app.name.padEnd(30).slice(0, 30)} ${id}`,
+      content: `${selected ? ">" : " "} ${label}`,
       fg: selected ? "#0B0F14" : "#D0D7DE",
       bg: selected ? "#F2CC60" : undefined,
     })
@@ -327,48 +333,78 @@ function appPanel(state: RemoteState) {
 
   return Box(
     {
+      width: 48,
       borderStyle: "rounded",
-      borderColor: focused ? "#F2CC60" : "#30363D",
-      padding: 1,
-      flexDirection: "column",
+      borderColor: "#F2CC60",
+      paddingX: 3,
+      paddingY: 2,
       gap: 1,
-      flexGrow: 1,
-      title: focused ? " Apps " : " Apps",
+      flexDirection: "column",
+      backgroundColor: "#101820",
+      title: " Apps ",
+      titleAlignment: "center",
     },
-    Text({
-      content: state.appFilter ? `Filter: ${state.appFilter}_` : "Type to filter apps",
-      fg: focused ? "#F2CC60" : "#8B949E",
-    }),
+    Text({ content: "Type to filter. Enter launches. Esc closes.", fg: "#F2CC60" }),
+    Text({ content: state.appFilter ? `Filter: ${state.appFilter}_` : "Filter: _", fg: "#8B949E" }),
     ...rows,
-    Text({ content: `${apps.length} apps · Enter launches selected app`, fg: "#8B949E" }),
+    Text({ content: `${apps.length} matching apps`, fg: "#8B949E" }),
   )
 }
 
 function typingPanel(state: RemoteState) {
-  const borderColor = state.typing ? "#F2CC60" : "#30363D"
-  const text = state.typing ? `Typing to TV: ${state.typeBuffer}_` : "Press i, type text, Enter sends it to the TV."
-
+  const text = state.typing ? `Type: ${state.typeBuffer}_` : "Press i to type on TV"
   return Box(
     {
+      width: 34,
       borderStyle: "rounded",
-      borderColor,
-      padding: 1,
+      borderColor: state.typing ? "#F2CC60" : "#30363D",
+      paddingX: 1,
+      paddingY: 1,
+      marginTop: 1,
     },
     Text({ content: text, fg: state.typing ? "#F2CC60" : "#8B949E" }),
   )
 }
 
-function helpPanel() {
+function footer(state: RemoteState) {
+  const content =
+    state.view === "apps"
+      ? "Apps: type to filter · Enter launch · Esc close"
+      : "Remote: arrows move · Enter OK · A apps · I type · Q quit"
+
   return Box(
     {
+      width: "100%",
       borderStyle: "rounded",
       borderColor: "#30363D",
-      padding: 1,
-      flexDirection: "column",
+      paddingX: 2,
+      paddingY: 1,
+      backgroundColor: "#0D1117",
     },
-    Text({ content: "Tab switches panes · q quits · F5 refreshes · Apps pane: type to filter, Enter to launch", fg: "#8B949E" }),
-    Text({ content: 'Shortcuts: tvctl youtube search drake album · tvctl netflix · tvctl launch "Prime Video"', fg: "#8B949E" }),
+    Text({ content, fg: "#8B949E" }),
   )
+}
+
+function buttonRow(items: ReturnType<typeof button>[]) {
+  return Box({ flexDirection: "row", gap: 1 }, ...items)
+}
+
+function button(label: string, key: string, color: string) {
+  return Box(
+    {
+      width: 11,
+      borderStyle: "rounded",
+      borderColor: color,
+      paddingX: 1,
+      paddingY: 1,
+      alignItems: "center",
+    },
+    Text({ content: `${label} ${key}`, fg: color }),
+  )
+}
+
+function spacer() {
+  return Text({ content: "", fg: "#8B949E" })
 }
 
 function filteredApps(state: RemoteState): RokuApp[] {
