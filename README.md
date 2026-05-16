@@ -26,6 +26,8 @@ tvctl                 # Open the OpenTUI remote
 tvctl remote          # Same as above
 tvctl discover        # Find Roku TVs on your local network
 tvctl ask "open YouTube and search Drake album"
+tvctl youtube          # Launch YouTube without opening the TUI
+tvctl netflix          # Launch Netflix without opening the TUI
 tvctl apps            # List installed Roku apps
 tvctl launch youtube  # Launch an app by id or fuzzy name
 tvctl active          # Show the active app
@@ -42,10 +44,17 @@ tvctl go home
 tvctl mute
 ```
 
-Common requests are planned locally. Ambiguous requests fall back to OpenCode using a free model. Override the model with:
+Common requests are planned locally and do not require AI. Ambiguous requests can fall back to an AI planner.
+
+The AI planner currently uses the `opencode` CLI as its provider bridge. That means AI fallback requires OpenCode to be installed and authenticated, but you can use any model/provider that your OpenCode setup supports.
+
+Configure the planner:
 
 ```bash
-TVCTL_AI_MODEL=opencode/big-pickle tvctl ask "open spotify and search future"
+tvctl ai
+tvctl ai-config --provider opencode --model opencode/big-pickle
+tvctl ai-config --provider opencode --model anthropic/claude-sonnet-4-5
+tvctl ask --model openai/gpt-5.4 "open spotify and search future"
 ```
 
 Pass `--host <ip>` to any device command to skip discovery/config:

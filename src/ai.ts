@@ -2,10 +2,10 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { findApp, launchApp } from "./roku/apps"
 import { RokuClient } from "./roku/client"
-import type { RokuApp, RokuKey } from "./types"
+import type { RokuApp, RokuKey, TvctlAiConfig } from "./types"
 
 const execFileAsync = promisify(execFile)
-const defaultModel = process.env.TVCTL_AI_MODEL ?? "opencode/qwen3.6-plus-free"
+const fallbackOpenCodeModel = "opencode/qwen3.6-plus-free"
 
 export type TvAction =
   | { action: "launch"; app: string }
@@ -18,9 +18,18 @@ export interface TvPlan {
   actions: TvAction[]
 }
 
-export async function planWithOpenCode(request: string, apps: RokuApp[]): Promise<TvPlan> {
+export async function planWithAi(request: string, apps: RokuApp[], config?: TvctlAiConfig, modelOverride?: string): Promise<TvPlan> {
+  const provider = config?.provider ?? "opencode"
+  if (provider === "opencode") {
+    return planWithOpenCode(request, apps, modelOverride ?? config?.model ?? process.env.TVCTL_AI_MODEL ?? fallbackOpenCodeModel)
+  }
+
+  throw new Error(`Unsupported AI provider: ${provider}`)
+}
+
+export async function planWithOpenCode(request: string, apps: RokuApp[], model: string): Promise<TvPlan> {
   const prompt = buildPrompt(request, apps)
-  const { stdout } = await execFileAsync("opencode", ["run", "-m", defaultModel, prompt], {
+  const { stdout } = await execFileAsync("opencode", ["run", "-m", model, prompt], {
     timeout: 90_000,
     maxBuffer: 1024 * 1024,
   })

@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { homedir } from "node:os"
-import type { RokuDevice, TvctlConfig } from "./types"
+import type { RokuDevice, TvctlAiConfig, TvctlConfig } from "./types"
 
 const configPath = join(homedir(), ".config", "tvctl", "config.json")
 
@@ -27,6 +27,16 @@ export async function setDefaultDevice(device: RokuDevice): Promise<void> {
 export async function getDefaultDevice(): Promise<RokuDevice | undefined> {
   const config = await readConfig()
   return config.defaultDevice
+}
+
+export async function setAiConfig(ai: TvctlAiConfig): Promise<void> {
+  const config = await readConfig()
+  await writeConfig({ ...config, ai })
+}
+
+export async function getAiConfig(): Promise<TvctlAiConfig | undefined> {
+  const config = await readConfig()
+  return config.ai
 }
 
 export function getConfigPath(): string {

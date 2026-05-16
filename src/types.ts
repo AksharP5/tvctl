@@ -16,6 +16,14 @@ export interface RokuApp {
 
 export interface TvctlConfig {
   defaultDevice?: RokuDevice
+  ai?: TvctlAiConfig
+}
+
+export type TvctlAiProvider = "opencode"
+
+export interface TvctlAiConfig {
+  provider: TvctlAiProvider
+  model?: string
 }
 
 export type RokuKey =

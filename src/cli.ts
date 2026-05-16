@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { cac } from "cac"
-import { deterministicPlan, executePlan, planWithOpenCode } from "./ai"
-import { getConfigPath, setDefaultDevice } from "./config"
+import { deterministicPlan, executePlan, planWithAi } from "./ai"
+import { getAiConfig, getConfigPath, setAiConfig, setDefaultDevice } from "./config"
 import { formatDevice, resolveDevice } from "./device"
 import { findApp, launchApp, searchInApp } from "./roku/apps"
 import { RokuClient } from "./roku/client"
@@ -10,10 +10,19 @@ import { runRemote } from "./tui/remote"
 import type { RokuKey } from "./types"
 
 const cli = cac("tvctl")
-const knownCommands = new Set(["remote", "discover", "key", "type", "apps", "launch", "active", "ask", "help"])
+const knownCommands = new Set(["remote", "discover", "key", "type", "apps", "launch", "active", "ask", "ai", "ai-config", "help"])
 
 interface HostOptions {
   host?: string
+}
+
+interface AskOptions extends HostOptions {
+  model?: string
+}
+
+interface AiConfigOptions {
+  provider?: string
+  model?: string
 }
 
 await maybeRunAppShortcut()
@@ -51,10 +60,40 @@ cli.command("discover", "Find Roku devices on the local network").action(async (
 cli
   .command("ask [...prompt]", "Ask tvctl to control the TV in plain English")
   .option("--host <host>", "Roku host or IP address")
-  .action(async (prompt: string[], options: HostOptions) => {
+  .option("--model <model>", "AI model to use for ambiguous requests")
+  .action(async (prompt: string[], options: AskOptions) => {
     const request = prompt.join(" ").trim()
     if (!request) throw new Error('Usage: tvctl ask "open YouTube and search Drake album"')
-    await runAiRequest(request, options.host)
+    await runAiRequest(request, options)
+  })
+
+cli
+  .command("ai", "Show AI planner configuration")
+  .action(async () => {
+    const config = await getAiConfig()
+    if (!config) {
+      console.log("AI provider: opencode")
+      console.log("AI model: opencode/qwen3.6-plus-free")
+      console.log("Note: AI fallback requires the opencode CLI unless the request can be planned locally.")
+      return
+    }
+    console.log(`AI provider: ${config.provider}`)
+    console.log(`AI model: ${config.model ?? "opencode/qwen3.6-plus-free"}`)
+  })
+
+cli
+  .command("ai-config", "Configure the AI planner")
+  .option("--provider <provider>", "Planner provider. Currently: opencode")
+  .option("--model <model>", "Model id, for example opencode/big-pickle or anthropic/claude-sonnet-4-5")
+  .action(async (options: AiConfigOptions) => {
+    const provider = options.provider ?? "opencode"
+    if (provider !== "opencode") {
+      throw new Error("Only the opencode AI provider is implemented right now.")
+    }
+
+    await setAiConfig({ provider, model: options.model })
+    console.log(`Saved AI provider: ${provider}`)
+    console.log(`Saved AI model: ${options.model ?? "opencode/qwen3.6-plus-free"}`)
   })
 
 cli
@@ -132,7 +171,7 @@ async function maybeRunAppShortcut(): Promise<void> {
   const apps = await client.apps()
   const app = findApp(apps, appQuery)
   if (!app) {
-    await runAiRequest(cleanArgs.join(" "), host)
+    await runAiRequest(cleanArgs.join(" "), { host })
     process.exit(0)
   }
 
@@ -149,17 +188,20 @@ async function maybeRunAppShortcut(): Promise<void> {
   process.exit(0)
 }
 
-async function runAiRequest(request: string, host?: string): Promise<void> {
-  const device = await resolveDevice(host)
+async function runAiRequest(request: string, options: AskOptions): Promise<void> {
+  const device = await resolveDevice(options.host)
   const client = new RokuClient(device.host)
   const apps = await client.apps()
   let plan = deterministicPlan(request, apps)
   if (!plan) {
     try {
-      plan = await planWithOpenCode(request, apps)
+      plan = await planWithAi(request, apps, await getAiConfig(), options.model)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      throw new Error(`Could not plan that TV request with AI: ${message}`)
+      throw new Error(
+        `Could not plan that TV request with AI: ${message}\n` +
+          "Configure AI with `tvctl ai config --provider opencode --model <provider/model>` or use a direct command like `tvctl netflix`.",
+      )
     }
   }
 
