@@ -52,18 +52,19 @@ export async function runRemote(device: RokuDevice): Promise<void> {
           id: "tvctl-root",
           width: "100%",
           height: "100%",
-          padding: 1,
+          padding: 2,
+          gap: 1,
           flexDirection: "column",
           alignItems: "center",
-          backgroundColor: "#080B10",
+          justifyContent: "center",
+          backgroundColor: "#160023",
         },
         header(device, state),
         Box(
           {
-            width: 48,
-            flexGrow: 1,
+            width: 42,
             flexDirection: "column",
-            justifyContent: "center",
+            alignItems: "center",
           },
           state.view === "apps" ? appDrawer(state) : remoteBody(state),
         ),
@@ -255,6 +256,9 @@ export async function runRemote(device: RokuDevice): Promise<void> {
       case "r":
         await sendKey("InstantReplay")
         return
+      case "o":
+        await sendKey("PowerOff")
+        return
       case "s":
         await sendKey("Search")
         return
@@ -277,44 +281,41 @@ export async function runRemote(device: RokuDevice): Promise<void> {
 function header(device: RokuDevice, state: RemoteState) {
   return Box(
     {
-      width: "100%",
-      borderStyle: "rounded",
-      borderColor: "#1F6FEB",
-      paddingX: 2,
-      paddingY: 1,
-      flexDirection: "row",
-      justifyContent: "space-between",
-      backgroundColor: "#0D1117",
+      width: 54,
+      paddingX: 1,
+      flexDirection: "column",
+      alignItems: "center",
     },
-    Text({ content: `tvctl  ${device.name}`, fg: "#F0F6FC" }),
-    Text({ content: `${state.activeApp?.name ?? "unknown"}  ·  ${state.status}`, fg: "#A5D6FF" }),
+    Text({ content: device.name, fg: "#F5E9FF" }),
+    Text({ content: `${state.activeApp?.name ?? "unknown"}  -  ${state.status}`, fg: "#C9A7FF" }),
   )
 }
 
 function remoteBody(state: RemoteState) {
   return Box(
     {
-      width: 48,
+      width: 38,
+      height: 34,
       borderStyle: "rounded",
-      borderColor: "#30363D",
-      paddingX: 4,
-      paddingY: 2,
+      borderColor: "#8B3DFF",
+      paddingX: 3,
+      paddingY: 1,
       gap: 1,
       flexDirection: "column",
       alignItems: "center",
-      backgroundColor: "#101820",
-      title: " Remote ",
-      titleAlignment: "center",
+      backgroundColor: "#0A0710",
     },
-    buttonRow([button("Home", "m", "#2F81F7"), button("Back", "b", "#8B949E"), button("Apps", "a", "#F2CC60")]),
+    Text({ content: "ROKU", fg: "#A970FF" }),
     spacer(),
-    Text({ content: "          ▲", fg: "#7EE787" }),
-    Text({ content: "      ◀  OK  ▶", fg: "#7EE787" }),
-    Text({ content: "          ▼", fg: "#7EE787" }),
+    buttonRow([button("POWER", "o", "#8B3DFF"), button("HOME", "m", "#8B3DFF")]),
+    buttonRow([button("BACK", "b", "#2C2238"), button("APPS", "a", "#5B1EA6")]),
     spacer(),
-    buttonRow([button("Search", "s", "#D2A8FF"), button("Play", "p", "#7EE787"), button("Replay", "r", "#FFA657")]),
+    dpad(),
+    spacer(),
+    buttonRow([button("SEARCH", "s", "#2C2238"), button("TYPE", "i", "#2C2238")]),
+    buttonRow([button("PLAY", "p", "#2C2238"), button("REPLAY", "r", "#2C2238")]),
     typingPanel(state),
-    Text({ content: state.lastKey ? `Last: ${state.lastKey}` : "Use arrow keys or hjkl", fg: "#8B949E" }),
+    Text({ content: state.lastKey ? `Last: ${state.lastKey}` : "arrows / hjkl move", fg: "#9F8FB4" }),
   )
 }
 
@@ -333,19 +334,20 @@ function appDrawer(state: RemoteState) {
 
   return Box(
     {
-      width: 48,
+      width: 42,
+      height: 34,
       borderStyle: "rounded",
-      borderColor: "#F2CC60",
+      borderColor: "#A970FF",
       paddingX: 3,
       paddingY: 2,
       gap: 1,
       flexDirection: "column",
-      backgroundColor: "#101820",
-      title: " Apps ",
+      backgroundColor: "#0A0710",
+      title: " Apps",
       titleAlignment: "center",
     },
-    Text({ content: "Type to filter. Enter launches. Esc closes.", fg: "#F2CC60" }),
-    Text({ content: state.appFilter ? `Filter: ${state.appFilter}_` : "Filter: _", fg: "#8B949E" }),
+    Text({ content: "Type to filter - Enter launches - Esc closes", fg: "#C9A7FF" }),
+    Text({ content: state.appFilter ? `Search: ${state.appFilter}_` : "Search: _", fg: "#9F8FB4" }),
     ...rows,
     Text({ content: `${apps.length} matching apps`, fg: "#8B949E" }),
   )
@@ -355,14 +357,15 @@ function typingPanel(state: RemoteState) {
   const text = state.typing ? `Type: ${state.typeBuffer}_` : "Press i to type on TV"
   return Box(
     {
-      width: 34,
+      width: 28,
       borderStyle: "rounded",
-      borderColor: state.typing ? "#F2CC60" : "#30363D",
+      borderColor: state.typing ? "#A970FF" : "#2C2238",
       paddingX: 1,
       paddingY: 1,
       marginTop: 1,
+      backgroundColor: "#120B1C",
     },
-    Text({ content: text, fg: state.typing ? "#F2CC60" : "#8B949E" }),
+    Text({ content: text, fg: state.typing ? "#F5E9FF" : "#9F8FB4" }),
   )
 }
 
@@ -370,18 +373,18 @@ function footer(state: RemoteState) {
   const content =
     state.view === "apps"
       ? "Apps: type to filter · Enter launch · Esc close"
-      : "Remote: arrows move · Enter OK · A apps · I type · Q quit"
+      : "arrows move · enter OK · A apps · I type · Q quit"
 
   return Box(
     {
-      width: "100%",
+      width: 54,
       borderStyle: "rounded",
-      borderColor: "#30363D",
+      borderColor: "#3B165F",
       paddingX: 2,
       paddingY: 1,
-      backgroundColor: "#0D1117",
+      backgroundColor: "#0A0710",
     },
-    Text({ content, fg: "#8B949E" }),
+    Text({ content, fg: "#C9A7FF" }),
   )
 }
 
@@ -392,14 +395,33 @@ function buttonRow(items: ReturnType<typeof button>[]) {
 function button(label: string, key: string, color: string) {
   return Box(
     {
-      width: 11,
+      width: 13,
       borderStyle: "rounded",
       borderColor: color,
+      backgroundColor: color === "#2C2238" ? "#120B1C" : color,
       paddingX: 1,
       paddingY: 1,
       alignItems: "center",
     },
-    Text({ content: `${label} ${key}`, fg: color }),
+    Text({ content: `${label} ${key}`, fg: color === "#2C2238" ? "#F5E9FF" : "#FFFFFF" }),
+  )
+}
+
+function dpad() {
+  return Box(
+    {
+      width: 28,
+      borderStyle: "rounded",
+      borderColor: "#3B165F",
+      paddingX: 2,
+      paddingY: 1,
+      flexDirection: "column",
+      alignItems: "center",
+      backgroundColor: "#120B1C",
+    },
+    Text({ content: "      ▲", fg: "#F5E9FF" }),
+    Text({ content: "  ◀   OK   ▶", fg: "#F5E9FF" }),
+    Text({ content: "      ▼", fg: "#F5E9FF" }),
   )
 }
 
