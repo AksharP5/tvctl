@@ -1,6 +1,6 @@
 {
   "name": "tvctl",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A terminal remote, CLI, TUI, and MCP server for Roku TVs.",
   "module": "src/cli.ts",
   "type": "module",
