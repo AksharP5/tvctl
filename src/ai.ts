@@ -123,14 +123,18 @@ export async function planTvRequest(
   if (mode === "local-first" || mode === "auto") {
     const plan = local()
     if (plan) return { plan, source: "local" }
-    return { plan: await planWithAi(request, apps, config, modelOverride, options), source: "ai" }
+    return { plan: preferActiveAppSearch(await planWithAi(request, apps, config, modelOverride, options), request, activeApp), source: "ai" }
   }
 
   try {
-    const plan = await planWithAi(request, apps, config, modelOverride, {
-      ...options,
-      timeoutMs: options.timeoutMs ?? aiPlannerBudgetMs,
-    })
+    const plan = preferActiveAppSearch(
+      await planWithAi(request, apps, config, modelOverride, {
+        ...options,
+        timeoutMs: options.timeoutMs ?? aiPlannerBudgetMs,
+      }),
+      request,
+      activeApp,
+    )
     return { plan, source: "ai" }
   } catch (error) {
     if (options.signal?.aborted) throw error
@@ -145,6 +149,24 @@ export async function planTvRequest(
 
     throw error
   }
+}
+
+function preferActiveAppSearch(plan: TvPlan, request: string, activeApp?: RokuApp): TvPlan {
+  if (!activeApp?.name || wantsGlobalSearch(request)) return plan
+
+  let changed = false
+  const actions = plan.actions.map((action) => {
+    if (action.action !== "search" || action.app) return action
+    changed = true
+    return { ...action, app: activeApp.name }
+  })
+
+  if (!changed) return plan
+  return { ...plan, summary: plan.summary.replace(/^Search Roku\b/i, `Search ${activeApp.name}`), actions }
+}
+
+function wantsGlobalSearch(request: string): boolean {
+  return /\b(global|roku|home|main)\s+(search|find)\b/i.test(request) || /\b(search|find)\s+(roku|globally|from home|on home|on roku)\b/i.test(request)
 }
 
 export async function executePlan(client: RokuClient, apps: RokuApp[], plan: TvPlan): Promise<void> {
@@ -187,11 +209,34 @@ export function deterministicPlan(request: string, apps: RokuApp[], activeApp?: 
     const appQuery = lower.startsWith("search") || lower.startsWith("find") ? second : first
     const query = lower.startsWith("search") || lower.startsWith("find") ? first : second
     const app = findApp(apps, appQuery)
-    if (!app) return undefined
+    if (app) {
+      return {
+        summary: `Search ${app.name} for "${query}"`,
+        actions: [{ action: "search", query, app: app.name }],
+      }
+    }
+  }
 
+  const homeSearchMatch = original.match(/^(?:go\s+)?home\s+(?:and\s+)?(?:search|find)(?:\s+for)?\s+(.+)$/i)
+  if (homeSearchMatch?.[1]) {
+    const query = homeSearchMatch[1].trim()
     return {
-      summary: `Search ${app.name} for "${query}"`,
-      actions: [{ action: "search", query, app: app.name }],
+      summary: `Search Roku for "${query}"`,
+      actions: [
+        { action: "key", key: "Home" },
+        { action: "search", query },
+      ],
+    }
+  }
+
+  const globalSearchMatch =
+    original.match(/^(?:search|find)\s+(?:roku|globally|global|from\s+home|on\s+home|on\s+roku)(?:\s+for)?\s+(.+)$/i) ??
+    original.match(/^(?:search|find)(?:\s+for)?\s+(.+?)\s+(?:on|in)\s+(?:roku|home)$/i)
+  if (globalSearchMatch?.[1]) {
+    const query = globalSearchMatch[1].trim()
+    return {
+      summary: `Search Roku for "${query}"`,
+      actions: [{ action: "search", query }],
     }
   }
 

@@ -121,18 +121,25 @@ server.registerTool(
   "tvctl_search",
   {
     title: "Search Roku",
-    description: "Search Roku globally or within a named provider app using Roku ECP search.",
+    description:
+      "Search within a named provider app, or within the currently active app when no app is provided. Use scope=global only when the user explicitly asks for Roku/global/home search.",
     inputSchema: {
       query: z.string().min(1).describe("Search query."),
-      app: z.string().optional().describe("Optional provider app name or ID, such as YouTube or Prime Video."),
+      app: z.string().optional().describe("Optional provider app name or ID, such as YouTube or Prime Video. If omitted, tvctl searches the active app when possible."),
+      scope: z.enum(["active", "global"]).optional().describe("Search scope. Defaults to active. Use global only for explicit Roku/global/home search requests."),
       host: hostSchema,
     },
   },
-  async ({ query, app, host }) => {
+  async ({ query, app, scope, host }) => {
     const { device, client } = await clientFor(host)
-    const apps = await client.apps()
+    const [apps, activeApp] = await Promise.all([client.apps(), client.activeApp().catch(() => undefined)])
     if (app) {
       const provider = await searchInApp(client, apps, app, query)
+      return textResult(`Searching ${provider.name} for "${query}" on ${device.name}.`)
+    }
+
+    if (scope !== "global" && activeApp?.name && findApp(apps, activeApp.name)) {
+      const provider = await searchInApp(client, apps, activeApp.name, query)
       return textResult(`Searching ${provider.name} for "${query}" on ${device.name}.`)
     }
 
