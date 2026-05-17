@@ -47,3 +47,26 @@ export type RokuKey =
   | "VolumeUp"
   | "VolumeDown"
   | "VolumeMute"
+
+export const rokuKeys = [
+  "Home",
+  "Rev",
+  "Fwd",
+  "Play",
+  "Select",
+  "Left",
+  "Right",
+  "Down",
+  "Up",
+  "Back",
+  "InstantReplay",
+  "Info",
+  "Backspace",
+  "Search",
+  "Enter",
+  "PowerOff",
+  "PowerOn",
+  "VolumeUp",
+  "VolumeDown",
+  "VolumeMute",
+] as const satisfies readonly RokuKey[]

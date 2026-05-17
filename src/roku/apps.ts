@@ -22,18 +22,15 @@ export async function launchApp(client: RokuClient, apps: RokuApp[], query: stri
 }
 
 export async function searchInApp(client: RokuClient, apps: RokuApp[], appQuery: string, searchQuery: string): Promise<RokuApp> {
-  const app = await launchApp(client, apps, appQuery)
-  await sleep(2500)
-  await client.keypress("Search")
-  await sleep(900)
-  await client.typeText(searchQuery)
+  const app = findApp(apps, appQuery)
+  if (!app) {
+    throw new Error(`No Roku app matched "${appQuery}". Run \`tvctl apps\` to see installed apps.`)
+  }
+
+  await client.searchBrowse(searchQuery, { providerId: app.id, provider: app.name })
   return app
 }
 
 export function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }

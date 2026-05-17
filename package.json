@@ -1,11 +1,12 @@
 {
   "name": "tvctl",
   "version": "0.2.0",
-  "description": "A terminal remote and CLI for Roku TVs.",
+  "description": "A terminal remote, CLI, TUI, and MCP server for Roku TVs.",
   "module": "src/cli.ts",
   "type": "module",
   "bin": {
-    "tvctl": "bin/tvctl"
+    "tvctl": "bin/tvctl",
+    "tvctl-mcp": "bin/tvctl-mcp"
   },
   "repository": {
     "type": "git",
@@ -15,8 +16,17 @@
     "url": "https://github.com/AksharP5/tvctl/issues"
   },
   "homepage": "https://github.com/AksharP5/tvctl#readme",
+  "keywords": [
+    "roku",
+    "remote",
+    "cli",
+    "tui",
+    "mcp",
+    "opencode",
+    "model-context-protocol"
+  ],
   "scripts": {
-    "build": "bun build src/cli.ts --compile --outfile dist/tvctl",
+    "build": "bun build src/cli.ts --compile --outfile dist/tvctl && bun build src/mcp.ts --compile --outfile dist/tvctl-mcp",
     "start": "bun src/cli.ts",
     "typecheck": "bunx tsc --noEmit",
     "pack:check": "npm pack --dry-run"
@@ -43,6 +53,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentui/core": "^0.2.10",
     "cac": "^7.0.0",
     "fast-xml-parser": "^5.8.0"
