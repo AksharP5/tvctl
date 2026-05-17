@@ -1,8 +1,8 @@
 # tvctl
 
-A Roku TV controller for OpenCode, plus a CLI and terminal remote.
+A Roku TV controller for MCP clients, plus a CLI and terminal remote.
 
-The recommended use case is the MCP server: connect `tvctl` to OpenCode and control your Roku from an AI chat. `tvctl` also includes direct CLI commands and a terminal UI if you want to use it without an MCP client.
+The recommended use case is the MCP server: connect `tvctl` to an MCP-capable AI client and control your Roku from chat. It works with OpenCode and should also work with Codex, Claude, or any other client that can run a local stdio MCP server. `tvctl` also includes direct CLI commands and a terminal UI if you want to use it without MCP.
 
 ## Install
 
@@ -22,7 +22,7 @@ The npm package currently requires Bun because the command entrypoints run with 
 
 ## Quick Start
 
-For OpenCode, use the MCP setup below. For direct terminal control:
+For AI chat control, use the MCP setup below. For direct terminal control:
 
 ```bash
 tvctl discover
@@ -37,9 +37,9 @@ If discovery fails, make sure your Roku and computer are on the same network, th
 
 Set it to `Enabled`.
 
-## OpenCode MCP Setup
+## MCP Setup
 
-This is the recommended way to use `tvctl`. The MCP server lets OpenCode control your Roku from a chat session.
+This is the recommended way to use `tvctl`. The MCP server lets an AI client control your Roku from a chat session. OpenCode setup looks like this:
 
 ```bash
 bun add -g tvctl
@@ -47,7 +47,7 @@ tvctl discover
 opencode mcp add
 ```
 
-When OpenCode asks for the MCP server type, choose the local command/stdio option. Do not choose `Remote`; Roku TVs are controlled over your private home network, so a hosted internet MCP server normally cannot reach them.
+When your MCP client asks for the server type, choose the local command/stdio option. Do not choose `Remote`; Roku TVs are controlled over your private home network, so a hosted internet MCP server normally cannot reach them.
 
 Use this command:
 
@@ -55,7 +55,7 @@ Use this command:
 tvctl mcp
 ```
 
-After that, ask OpenCode things like:
+After that, ask your AI client things like:
 
 ```text
 Use tvctl to open YouTube and search Drake album reactions.
@@ -63,16 +63,16 @@ Use tvctl to open Prime Video and search for Shrek.
 Use tvctl to press Home, then open Netflix.
 ```
 
-OpenCode acts as the AI brain. `tvctl mcp` is the local bridge between OpenCode and the Roku on your Wi-Fi.
+Your MCP client acts as the AI brain. `tvctl mcp` is the local bridge between the AI client and the Roku on your Wi-Fi.
 
 ## Commands
 
-These are useful if you want direct CLI or TUI control without OpenCode.
+These are useful if you want direct CLI or TUI control without an MCP client.
 
 ```bash
 tvctl                 # Open the OpenTUI remote
 tvctl --model         # Open provider/model setup directly
-tvctl mcp             # Start the MCP stdio server for OpenCode and other agents
+tvctl mcp             # Start the MCP stdio server for AI clients
 tvctl remote          # Open the OpenTUI remote
 tvctl discover        # Find Roku TVs on your local network
 tvctl ask "open YouTube and search Drake album"
@@ -105,7 +105,7 @@ Search requests use Roku's ECP `/search/browse` endpoint with a provider hint wh
 
 ## AI In The TUI/CLI
 
-The easiest AI setup is OpenCode through MCP. The built-in TUI/CLI planner is still available if you want to use `tvctl ask` directly.
+The easiest AI setup is an MCP-capable client such as OpenCode, Codex, or Claude. The built-in TUI/CLI planner is still available if you want to use `tvctl ask` directly.
 
 Install and log in to the provider CLI you want:
 
