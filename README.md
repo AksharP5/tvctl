@@ -1,8 +1,8 @@
 # tvctl
 
-A terminal remote, CLI, and MCP server for Roku TVs.
+A Roku TV controller for OpenCode, plus a CLI and terminal remote.
 
-Use `tvctl` to control a Roku TV from your terminal, or connect it to OpenCode so an AI chat can launch apps, press remote buttons, type text, and search streaming apps.
+The recommended use case is the MCP server: connect `tvctl` to OpenCode and control your Roku from an AI chat. `tvctl` also includes direct CLI commands and a terminal UI if you want to use it without an MCP client.
 
 ## Install
 
@@ -22,6 +22,8 @@ The npm package currently requires Bun because the command entrypoints run with 
 
 ## Quick Start
 
+For OpenCode, use the MCP setup below. For direct terminal control:
+
 ```bash
 tvctl discover
 tvctl
@@ -37,7 +39,7 @@ Set it to `Enabled`.
 
 ## OpenCode MCP Setup
 
-The MCP server lets OpenCode control your Roku from a chat session.
+This is the recommended way to use `tvctl`. The MCP server lets OpenCode control your Roku from a chat session.
 
 ```bash
 bun add -g tvctl
@@ -64,6 +66,8 @@ Use tvctl to press Home, then open Netflix.
 OpenCode acts as the AI brain. `tvctl mcp` is the local bridge between OpenCode and the Roku on your Wi-Fi.
 
 ## Commands
+
+These are useful if you want direct CLI or TUI control without OpenCode.
 
 ```bash
 tvctl                 # Open the OpenTUI remote
