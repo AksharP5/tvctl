@@ -9,10 +9,11 @@ import { findApp, launchApp, searchInApp } from "./roku/apps"
 import { RokuClient } from "./roku/client"
 import { discoverRokus } from "./roku/discover"
 import { rokuKeys } from "./types"
+import { tvctlVersion } from "./version"
 
 const server = new McpServer({
   name: "tvctl",
-  version: "0.2.0",
+  version: tvctlVersion,
 })
 
 const hostSchema = z.string().optional().describe("Roku host/IP. Omit to use tvctl's configured default device.")

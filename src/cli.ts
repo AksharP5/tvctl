@@ -10,6 +10,7 @@ import { runMcpServer } from "./mcp"
 import { runModelSetup } from "./tui/model"
 import { runRemote } from "./tui/remote"
 import { rokuKeys, type RokuKey } from "./types"
+import { tvctlVersion } from "./version"
 
 const cli = cac("tvctl")
 const knownCommands = new Set([
@@ -247,7 +248,7 @@ cli
   })
 
 cli.help()
-cli.version("0.2.0")
+cli.version(tvctlVersion)
 
 try {
   cli.parse()
