@@ -1,50 +1,67 @@
 # tvctl
 
-A terminal remote and CLI for Roku TVs.
+A terminal remote, CLI, and MCP server for Roku TVs.
 
-`tvctl` starts as a Roku-first local network controller. It discovers Roku devices, sends keypresses, launches apps, types from your laptop keyboard, and opens an OpenTUI remote in your terminal.
+Use `tvctl` to control a Roku TV from your terminal, or connect it to OpenCode so an AI chat can launch apps, press remote buttons, type text, and search streaming apps.
 
 ## Install
 
-Run without installing:
-
-```bash
-bunx tvctl
-npx tvctl
-```
-
-Install globally:
+Install Bun first, then install `tvctl` globally:
 
 ```bash
 bun add -g tvctl
-npm install -g tvctl
 ```
 
-`tvctl` is published on npm. The npm package currently requires Bun because the CLI entrypoint runs with `#!/usr/bin/env bun`; install Bun first if you want to use `npx`, `npm install -g`, or `bunx`.
+You can also run it without installing:
 
-First setup:
+```bash
+bunx tvctl
+```
+
+The npm package currently requires Bun because the command entrypoints run with `#!/usr/bin/env bun`.
+
+## Quick Start
 
 ```bash
 tvctl discover
 tvctl
 ```
 
-Local development from this repo:
+`tvctl discover` finds Roku devices on your local network and saves the first one as your default device in `~/.config/tvctl/config.json`. `tvctl` opens the terminal remote.
+
+If discovery fails, make sure your Roku and computer are on the same network, then enable:
+
+`Settings > System > Advanced system settings > Control by mobile apps > Network access`
+
+Set it to `Enabled`.
+
+## OpenCode MCP Setup
+
+The MCP server lets OpenCode control your Roku from a chat session.
 
 ```bash
-bun install
-bun src/cli.ts discover
-bun src/cli.ts
+bun add -g tvctl
+tvctl discover
+opencode mcp add
 ```
 
-## Usage
+When OpenCode asks for the MCP server type, choose the local command/stdio option. Do not choose `Remote`; Roku TVs are controlled over your private home network, so a hosted internet MCP server normally cannot reach them.
+
+Use this command:
 
 ```bash
-bun src/cli.ts discover
-bun src/cli.ts
+tvctl mcp
 ```
 
-After discovery, `tvctl` saves the first Roku as your default device in `~/.config/tvctl/config.json`.
+After that, ask OpenCode things like:
+
+```text
+Use tvctl to open YouTube and search Drake album reactions.
+Use tvctl to open Prime Video and search for Shrek.
+Use tvctl to press Home, then open Netflix.
+```
+
+OpenCode acts as the AI brain. `tvctl mcp` is the local bridge between OpenCode and the Roku on your Wi-Fi.
 
 ## Commands
 
@@ -52,7 +69,7 @@ After discovery, `tvctl` saves the first Roku as your default device in `~/.conf
 tvctl                 # Open the OpenTUI remote
 tvctl --model         # Open provider/model setup directly
 tvctl mcp             # Start the MCP stdio server for OpenCode and other agents
-tvctl remote          # Same as above
+tvctl remote          # Open the OpenTUI remote
 tvctl discover        # Find Roku TVs on your local network
 tvctl ask "open YouTube and search Drake album"
 tvctl youtube          # Launch YouTube without opening the TUI
@@ -68,7 +85,7 @@ tvctl back            # Go back
 tvctl type "hello"    # Type into the active Roku text field
 ```
 
-Natural language can also be passed directly:
+Natural language can also be passed directly to the CLI:
 
 ```bash
 tvctl open youtube and search drake album
@@ -78,13 +95,15 @@ tvctl go home
 tvctl mute
 ```
 
-Ask requests use the fastest planner that should satisfy the request. In `auto` mode, tvctl tries the local planner first for known Roku intents, then uses the configured AI planner only when the request is new, fuzzy, or outside the local planner. Direct remote commands stay local so they remain instant.
+Direct commands such as `tvctl netflix`, `tvctl youtube search drake album`, and `tvctl go home` do not require any AI provider.
 
-Search requests use Roku's ECP `/search/browse` endpoint with a provider hint when you name an app, so `tvctl open Prime and search The Batman` does not need to guess whether Prime is still loading, showing profiles, or sitting on its home screen. Roku does not expose a normal screenshot or focused-control API through ECP, so tvctl cannot literally see arbitrary TV UI state from the network alone. True screen-aware control would require an observation source such as an HDMI capture card, camera, or app-specific API.
+Search requests use Roku's ECP `/search/browse` endpoint with a provider hint when you name an app, so `tvctl open Prime and search The Batman` does not need to guess whether Prime is still loading, showing profiles, or sitting on its home screen.
 
-The suggested default is OpenCode with `opencode/big-pickle`, because it has been consistently free. It can be slower than using the physical remote for tiny tasks, so users with Codex, Claude, or paid OpenCode-backed models should pick a faster model.
+## AI In The TUI/CLI
 
-Install and log in to the provider CLI you want to use:
+The easiest AI setup is OpenCode through MCP. The built-in TUI/CLI planner is still available if you want to use `tvctl ask` directly.
+
+Install and log in to the provider CLI you want:
 
 ```bash
 opencode auth login
@@ -105,30 +124,11 @@ tvctl ask --planner ai-first "find a relaxing fireplace video on youtube"
 tvctl ask --planner local-only "go home"
 ```
 
-Planner modes:
-
-- `auto`: local planner first for speed, then AI for requests local parsing cannot handle.
-- `ai-first`: AI only. Use this to test the marketing-path planner behavior.
-- `local-first`: local planner first, then AI only when local parsing cannot handle the request.
-- `local-only`: no AI provider calls.
-
-Set `TVCTL_AI_PLANNER_BUDGET_MS` to change the `auto` planning budget. Set `TVCTL_PLANNER` to choose a default mode.
+In `auto` mode, tvctl tries the fast local planner first, then uses the configured AI provider only when local parsing cannot handle the request. Use `--planner ai-first` when you explicitly want the AI planner path.
 
 You can also configure the planner from the main TUI. Run `tvctl`, press `c`, choose the provider, choose a model, and press `Enter` or click `Save`. `tvctl` loads model catalogs from provider CLIs when available, such as `opencode models` and `codex debug models`; custom model entry is still available for providers or models that do not expose a local catalog.
 
 The main TUI also has an agent prompt. Press `/`, type a request like `open prime` or `search youtube for drake album`, then press `Enter`.
-
-The TUI shows the active provider/model and checks whether the selected provider CLI appears ready. If it says the provider needs login or setup, run the matching login command above.
-
-Provider support:
-
-- `opencode`: uses `opencode run -m <model>`.
-- `codex`: uses `codex exec -m <model>`.
-- `claude`: uses `claude -p --model <model>`.
-
-Direct commands such as `tvctl netflix`, `tvctl youtube search drake album`, and `tvctl go home` do not require any AI provider.
-
-CLI remote shortcuts include `up`, `down`, `left`, `right`, `ok`, `select`, `home`, `back`, `play`, `pause`, `search`, `info`, `mute`, `vol-up`, `vol-down`, `power-on`, and `power-off`. The generic form `tvctl key <key>` also accepts Roku key names case-insensitively, such as `tvctl key left`.
 
 ## App Shortcuts
 
@@ -205,49 +205,22 @@ You can also pass `--host <ip>` directly if discovery is blocked by your network
 
 ## MCP Server
 
-`tvctl` includes an MCP stdio server so MCP-capable agents such as OpenCode can control your Roku from a chat session. This is intentionally a local command MCP, not a remote URL MCP, because Roku TVs are controlled over your private home network. A hosted remote MCP server on the internet cannot normally reach a user's LAN Roku.
-
-After the package is installed, either command starts the same MCP server:
+`tvctl mcp` starts a local stdio MCP server. MCP clients can use it to discover Roku devices, list installed apps, check the active app, press remote keys, type text, launch apps, search, and run concise natural-language TV requests.
 
 ```bash
 tvctl mcp
 tvctl-mcp
 ```
 
-Install globally if you want the command available everywhere:
-
-```bash
-bun add -g tvctl
-```
-
-For local development from this repo:
-
-```bash
-bun src/mcp.ts
-```
-
-Add it to OpenCode:
-
-```bash
-opencode mcp add
-```
-
-When prompted for the server type, choose the local command/stdio option. Do not choose `Remote`; that screen expects an HTTP URL for a hosted MCP server.
-
-Use one of these local commands:
-
-```bash
-tvctl mcp
-tvctl-mcp
-```
-
-or, from this repo:
+For local development from this repo, use:
 
 ```bash
 bun /absolute/path/to/tvctl/src/mcp.ts
 ```
 
-The server exposes tools for discovery, installed apps, active app, keypresses, typing, launching apps, Roku search, and concise natural-language control. In an MCP chat, the model should usually call the primitive tools directly. The `tvctl_control` tool defaults to local-only planning to avoid recursive loops where OpenCode calls tvctl, and tvctl calls OpenCode again; pass `planner=ai-first` only when you explicitly want nested AI planning.
+In an MCP chat, the model should usually call the primitive tools directly. The `tvctl_control` tool defaults to local-only planning to avoid recursive loops where OpenCode calls tvctl, and tvctl calls OpenCode again.
+
+Roku does not expose a normal screenshot or focused-control API through ECP, so tvctl cannot literally see arbitrary TV UI state from the network alone. True screen-aware control would require an observation source such as an HDMI capture card, camera, or app-specific API.
 
 ## Development
 
@@ -255,6 +228,14 @@ The server exposes tools for discovery, installed apps, active app, keypresses, 
 bun install
 bun run typecheck
 bun src/cli.ts --help
+```
+
+Local development from this repo:
+
+```bash
+bun install
+bun src/cli.ts discover
+bun src/cli.ts
 ```
 
 ## Publishing Checklist
