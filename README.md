@@ -6,7 +6,9 @@ The recommended use case is the MCP server: connect `tvctl` to an MCP-capable AI
 
 ## Install
 
-Install Bun first, then install `tvctl` globally:
+Install Bun first. For MCP usage, your MCP client can run `tvctl` through `npx` without a global install.
+
+For direct CLI/TUI usage, install `tvctl` globally:
 
 ```bash
 bun add -g tvctl
@@ -42,14 +44,19 @@ Set it to `Enabled`.
 This is the recommended way to use `tvctl`. The MCP server lets an AI client control your Roku from a chat session. OpenCode setup looks like this:
 
 ```bash
-bun add -g tvctl
-tvctl discover
+npx -y tvctl@latest discover
 opencode mcp add
 ```
 
 When your MCP client asks for the server type, choose the local command/stdio option. Do not choose `Remote`; Roku TVs are controlled over your private home network, so a hosted internet MCP server normally cannot reach them.
 
 Use this command:
+
+```bash
+npx -y tvctl@latest mcp
+```
+
+If you installed `tvctl` globally, this also works:
 
 ```bash
 tvctl mcp
