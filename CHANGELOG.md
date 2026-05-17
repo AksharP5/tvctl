@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/AksharP5/tvctl/compare/v0.3.1...v0.3.2) (2026-05-17)
+
+
+### Bug Fixes
+
+* prefer active app search ([889afb7](https://github.com/AksharP5/tvctl/commit/889afb761e92726623111028a9931cc738a060f6))
+
 ## [0.3.1](https://github.com/AksharP5/tvctl/compare/v0.3.0...v0.3.1) (2026-05-17)
 
 
