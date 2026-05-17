@@ -1,17 +1,69 @@
 #!/usr/bin/env bun
 import { cac } from "cac"
-import { defaultAiConfig, deterministicPlan, executePlan, planWithAi } from "./ai"
+import { defaultAiConfig, executePlan, planTvRequest } from "./ai"
 import { getAiConfig, getConfigPath, setAiConfig, setDefaultDevice } from "./config"
 import { formatDevice, resolveDevice } from "./device"
 import { findApp, launchApp, searchInApp } from "./roku/apps"
 import { RokuClient } from "./roku/client"
 import { discoverRokus } from "./roku/discover"
+import { runMcpServer } from "./mcp"
 import { runModelSetup } from "./tui/model"
 import { runRemote } from "./tui/remote"
-import type { RokuKey } from "./types"
+import { rokuKeys, type RokuKey } from "./types"
 
 const cli = cac("tvctl")
-const knownCommands = new Set(["remote", "discover", "key", "type", "apps", "launch", "active", "ask", "ai", "ai-config", "help"])
+const knownCommands = new Set([
+  "remote",
+  "discover",
+  "key",
+  "type",
+  "apps",
+  "launch",
+  "active",
+  "ask",
+  "ai",
+  "ai-config",
+  "mcp",
+  "help",
+  "up",
+  "down",
+  "left",
+  "right",
+  "ok",
+  "select",
+  "home",
+  "back",
+  "play",
+  "pause",
+  "search",
+  "info",
+  "mute",
+  "vol-up",
+  "vol-down",
+  "power-on",
+  "power-off",
+])
+
+const keyAliases: Record<string, RokuKey> = {
+  up: "Up",
+  down: "Down",
+  left: "Left",
+  right: "Right",
+  ok: "Select",
+  select: "Select",
+  home: "Home",
+  back: "Back",
+  play: "Play",
+  pause: "Play",
+  info: "Info",
+  mute: "VolumeMute",
+  "vol-up": "VolumeUp",
+  "volume-up": "VolumeUp",
+  "vol-down": "VolumeDown",
+  "volume-down": "VolumeDown",
+  "power-on": "PowerOn",
+  "power-off": "PowerOff",
+} satisfies Record<string, RokuKey>
 
 interface HostOptions {
   host?: string
@@ -19,6 +71,7 @@ interface HostOptions {
 
 interface AskOptions extends HostOptions {
   model?: string
+  planner?: string
 }
 
 interface RootOptions extends HostOptions {
@@ -77,6 +130,7 @@ cli
   .command("ask [...prompt]", "Ask tvctl to control the TV in plain English")
   .option("--host <host>", "Roku host or IP address")
   .option("--model <model>", "AI model to use for ambiguous requests")
+  .option("--planner <mode>", "Planner mode: auto, ai-first, local-first, or local-only")
   .action(async (prompt: string[], options: AskOptions) => {
     const request = prompt.join(" ").trim()
     if (!request) throw new Error('Usage: tvctl ask "open YouTube and search Drake album"')
@@ -112,13 +166,44 @@ cli
     console.log(`Saved AI model: ${options.model ?? defaultAiConfig.model}`)
   })
 
+cli.command("mcp", "Start the tvctl MCP stdio server").action(async () => {
+  await runMcpServer()
+})
+
 cli
   .command("key <key>", "Send a Roku keypress")
   .option("--host <host>", "Roku host or IP address")
   .action(async (key: RokuKey, options: HostOptions) => {
     const device = await resolveDevice(options.host)
-    await new RokuClient(device.host).keypress(key)
-    console.log(`Sent ${key} to ${device.name}`)
+    const resolvedKey = resolveRokuKey(key)
+    await new RokuClient(device.host).keypress(resolvedKey)
+    console.log(`Sent ${resolvedKey} to ${device.name}`)
+  })
+
+for (const [command, key] of Object.entries(keyAliases)) {
+  cli
+    .command(command, `Send ${key}`)
+    .option("--host <host>", "Roku host or IP address")
+    .action(async (options: HostOptions) => {
+      const device = await resolveDevice(options.host)
+      await new RokuClient(device.host).keypress(key)
+      console.log(`Sent ${key} to ${device.name}`)
+    })
+}
+
+cli
+  .command("search [...prompt]", "Search on the active app, or send Search with no prompt")
+  .option("--host <host>", "Roku host or IP address")
+  .action(async (prompt: string[], options: HostOptions) => {
+    const request = prompt.join(" ").trim()
+    if (request) {
+      await runAiRequest(`search ${request}`, options)
+      return
+    }
+
+    const device = await resolveDevice(options.host)
+    await new RokuClient(device.host).keypress("Search")
+    console.log(`Sent Search to ${device.name}`)
   })
 
 cli
@@ -162,7 +247,7 @@ cli
   })
 
 cli.help()
-cli.version("0.1.0")
+cli.version("0.2.0")
 
 try {
   cli.parse()
@@ -213,24 +298,42 @@ function looksLikeAppOnlyRequest(args: string[]): boolean {
   return args.length <= 3 && !args.some((arg) => /^(open|launch|start|switch|change|go|search|find|play|pause|mute|volume|turn)$/i.test(arg))
 }
 
+function resolveRokuKey(value: string): RokuKey {
+  const alias = keyAliases[value.toLowerCase()]
+  if (alias) return alias
+
+  const key = rokuKeys.find((item) => item.toLowerCase() === value.toLowerCase())
+  if (!key) {
+    throw new Error(`Unknown Roku key "${value}". Try one of: ${rokuKeys.join(", ")}`)
+  }
+  return key
+}
+
 async function runAiRequest(request: string, options: AskOptions): Promise<void> {
   const device = await resolveDevice(options.host)
   const client = new RokuClient(device.host)
-  const apps = await client.apps()
-  let plan = deterministicPlan(request, apps)
-  if (!plan) {
-    try {
-      plan = await planWithAi(request, apps, await getAiConfig(), options.model)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      throw new Error(
-        `Could not plan that TV request with AI: ${message}\n` +
-          "Configure AI with `tvctl --model` or use a direct command like `tvctl netflix`.",
-      )
-    }
+  const [apps, activeApp] = await Promise.all([client.apps(), client.activeApp().catch(() => undefined)])
+  let result: Awaited<ReturnType<typeof planTvRequest>>
+  try {
+    result = await planTvRequest(request, apps, activeApp, await getAiConfig(), options.model, {
+      mode: parsePlannerMode(options.planner),
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `Could not plan that TV request: ${message}\n` +
+        "Configure AI with `tvctl --model`, use `--planner local-first`, or use a direct command like `tvctl netflix`.",
+    )
   }
 
-  console.log(plan.summary)
-  await executePlan(client, apps, plan)
+  const plannerLabel = result.source === "ai" ? "AI" : result.fallbackReason ? "local fallback" : "local"
+  console.log(`${result.plan.summary} (${plannerLabel})`)
+  await executePlan(client, apps, result.plan)
   console.log(`Done on ${device.name}`)
+}
+
+function parsePlannerMode(value?: string) {
+  if (!value) return undefined
+  if (value === "auto" || value === "ai-first" || value === "local-first" || value === "local-only") return value
+  throw new Error("Planner mode must be one of: auto, ai-first, local-first, local-only.")
 }

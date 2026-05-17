@@ -28,6 +28,14 @@ export class RokuClient {
     await this.post(`/launch/${encodeURIComponent(appId)}`)
   }
 
+  async searchBrowse(query: string, options: { providerId?: string; provider?: string; launch?: boolean } = {}): Promise<void> {
+    const params = new URLSearchParams({ keyword: query })
+    if (options.providerId) params.set("provider-id", options.providerId)
+    if (options.provider) params.set("provider", options.provider)
+    if (options.launch) params.set("launch", "true")
+    await this.post(`/search/browse?${params.toString()}`, 10000)
+  }
+
   async apps(timeoutMs = 5000): Promise<RokuApp[]> {
     const xml = await this.getText("/query/apps", timeoutMs)
     return parseApps(xml)
