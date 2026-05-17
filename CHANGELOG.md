@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/AksharP5/tvctl/compare/v0.3.0...v0.3.1) (2026-05-17)
+
+
+### Bug Fixes
+
+* read package version in cli ([5d6f266](https://github.com/AksharP5/tvctl/commit/5d6f266f87c7ab2eb50c5043cc4c6a39dd9b7bd7))
+
 ## [0.3.0](https://github.com/AksharP5/tvctl/compare/v0.2.0...v0.3.0) (2026-05-17)
 
 
