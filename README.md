@@ -248,11 +248,3 @@ bun install
 bun src/cli.ts discover
 bun src/cli.ts
 ```
-
-## Publishing Checklist
-
-- Add an npm automation token as `NPM_TOKEN`, or configure npm trusted publishing for the GitHub Actions release workflow.
-- Use conventional commits on `main`: `fix:` creates patch releases, `feat:` creates minor releases, and `feat!:` or `BREAKING CHANGE:` creates major releases.
-- Release Please opens or updates one release PR that bumps `package.json`, updates `CHANGELOG.md`, and groups releasable commits.
-- Merge the release PR when you want to publish the grouped updates. The workflow publishes npm, tags `vX.Y.Z`, and creates a GitHub release.
-- Keep Roku setup docs clear: users need both devices on the same local network and Roku mobile app control enabled under `Settings > System > Advanced system settings > Control by mobile apps > Network access`.
