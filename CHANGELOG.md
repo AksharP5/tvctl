@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/AksharP5/tvctl/compare/v0.3.2...v0.3.3) (2026-05-18)
+
+
+### Bug Fixes
+
+* search within launched Roku apps ([78113b1](https://github.com/AksharP5/tvctl/commit/78113b16f218c9510badee36bda7083da378fa17))
+
 ## [0.3.2](https://github.com/AksharP5/tvctl/compare/v0.3.1...v0.3.2) (2026-05-17)
 
 
