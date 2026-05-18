@@ -27,7 +27,7 @@ export async function searchInApp(client: RokuClient, apps: RokuApp[], appQuery:
     throw new Error(`No Roku app matched "${appQuery}". Run \`tvctl apps\` to see installed apps.`)
   }
 
-  await client.searchBrowse(searchQuery, { providerId: app.id, provider: app.name })
+  await client.searchInApp(app.id, searchQuery)
   return app
 }
 

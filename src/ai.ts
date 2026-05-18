@@ -177,7 +177,11 @@ export async function executePlan(client: RokuClient, apps: RokuApp[], plan: TvP
         break
       case "search": {
         const app = action.app ? findApp(apps, action.app) : undefined
-        await client.searchBrowse(action.query, { providerId: app?.id, provider: app?.name, launch: action.launch })
+        if (app && !action.launch) {
+          await client.searchInApp(app.id, action.query)
+        } else {
+          await client.searchBrowse(action.query, { providerId: app?.id, provider: app?.name, launch: action.launch })
+        }
         break
       }
       case "key":

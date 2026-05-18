@@ -36,6 +36,23 @@ export class RokuClient {
     await this.post(`/search/browse?${params.toString()}`, 10000)
   }
 
+  async searchInApp(appId: string, query: string): Promise<void> {
+    const active = await this.activeApp().catch(() => undefined)
+    if (active?.id !== appId) {
+      await this.launch(appId)
+      for (let i = 0; i < 15; i++) {
+        await sleep(1000)
+        const current = await this.activeApp().catch(() => undefined)
+        if (current?.id === appId) break
+      }
+    }
+
+    await this.keypress("Search")
+    await sleep(1500)
+    await this.typeText(query)
+    await this.keypress("Enter")
+  }
+
   async apps(timeoutMs = 5000): Promise<RokuApp[]> {
     const xml = await this.getText("/query/apps", timeoutMs)
     return parseApps(xml)
@@ -67,6 +84,10 @@ export class RokuClient {
   private async post(path: string, timeoutMs = 5000): Promise<void> {
     await rokuRequest(this.host, path, "POST", timeoutMs)
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function rokuRequest(host: string, path: string, method: "GET" | "POST", timeoutMs: number): Promise<string> {
